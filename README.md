@@ -19,26 +19,20 @@ sessions resume with `--resume`, OpenCode with `--continue`.
 ## Install
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/abhinavramkumar/grove/main/install-remote.sh | bash
+curl -sSL https://raw.githubusercontent.com/abhinavramkumar/grove/main/install.sh | sh
 ```
 
-Or install a specific version:
+Specific version or custom directory:
 
 ```bash
-VERSION=v0.1.0 curl -sSL https://raw.githubusercontent.com/abhinavramkumar/grove/main/install-remote.sh | bash
+VERSION=v0.2.0 curl -sSL https://raw.githubusercontent.com/abhinavramkumar/grove/main/install.sh | sh
+INSTALL_DIR=~/.local/bin curl -sSL https://raw.githubusercontent.com/abhinavramkumar/grove/main/install.sh | sh
 ```
 
-Custom install directory:
+Update to latest:
 
 ```bash
-INSTALL_DIR=~/.local/bin curl -sSL https://raw.githubusercontent.com/abhinavramkumar/grove/main/install-remote.sh | bash
-```
-
-From source:
-
-```bash
-git clone https://github.com/abhinavramkumar/grove.git && cd grove
-./install.sh
+grove update
 ```
 
 ## Usage
@@ -48,6 +42,8 @@ grove                    # Launch TUI (default)
 grove new --tool claude --dir . --prompt "fix the bug"
 grove list               # Tab-separated session list
 grove attach <id>        # Attach to session directly
+grove update             # Self-update to latest release
+grove --version          # Print version
 ```
 
 ## TUI Keybindings
