@@ -417,93 +417,134 @@ func (m CreateModel) createSession() tea.Cmd {
 	}
 }
 
+// renderStepProgress renders a horizontal numbered step indicator.
+func renderStepProgress(current int, steps []string) string {
+	var b strings.Builder
+	accentStyle := lipgloss.NewStyle().Foreground(ActiveTheme.Accent).Bold(true)
+	dimStyle := lipgloss.NewStyle().Foreground(ActiveTheme.FgDim)
+	connector := dimStyle.Render("──")
+
+	for i, name := range steps {
+		label := fmt.Sprintf("%d %s", i+1, name)
+		if i <= current {
+			b.WriteString(accentStyle.Render(label))
+		} else {
+			b.WriteString(dimStyle.Render(label))
+		}
+		if i < len(steps)-1 {
+			b.WriteString(" " + connector + " ")
+		}
+	}
+	return b.String()
+}
+
+// createStepIndex returns the current step index for the progress bar.
+func (m CreateModel) createStepIndex() int {
+	if m.dirSource == dirWorktree {
+		switch m.step {
+		case stepDirSource:
+			return 0
+		case stepRepoSelect:
+			return 1
+		case stepDirInput:
+			return 2
+		case stepTool:
+			return 3
+		case stepPrompt:
+			return 4
+		case stepConfirm:
+			return 5
+		}
+	}
+	switch m.step {
+	case stepDirSource:
+		return 0
+	case stepDirInput:
+		return 1
+	case stepTool:
+		return 2
+	case stepPrompt:
+		return 3
+	case stepConfirm:
+		return 4
+	}
+	return 0
+}
+
+// createStepNames returns step names for the progress bar.
+func (m CreateModel) createStepNames() []string {
+	if m.dirSource == dirWorktree {
+		return []string{"Source", "Repo", "Branch", "Tool", "Prompt", "Confirm"}
+	}
+	return []string{"Source", "Directory", "Tool", "Prompt", "Confirm"}
+}
+
 // View renders the wizard.
 func (m CreateModel) View() string {
 	var b strings.Builder
 
-	title := wizardTitleStyle.Render("New Session")
-	b.WriteString(title)
-	b.WriteString("\n\n")
+	// Header.
+	b.WriteString(S.WizardTitle.Render("New Session"))
+	b.WriteString("\n")
 
-	// Dynamic step numbering: worktree mode has an extra repo-select step.
-	stepNum := 1
-	nextStep := func() int { stepNum++; return stepNum - 1 }
+	// Step progress bar.
+	b.WriteString("  " + renderStepProgress(m.createStepIndex(), m.createStepNames()))
+	b.WriteString("\n\n")
 
 	switch m.step {
 	case stepDirSource:
-		b.WriteString(wizardLabelStyle.Render(fmt.Sprintf("Step %d: Directory source", nextStep())))
+		b.WriteString(S.WizardLabel.Render("Directory source"))
 		b.WriteString("\n\n")
-		b.WriteString("  " + wizardChoiceStyle.Render("[1]") + " Use existing directory\n")
-		b.WriteString("  " + wizardChoiceStyle.Render("[2]") + " Create worktree\n")
+		b.WriteString("  " + S.WizardChoice.Render("[1]") + " Use existing directory\n")
+		b.WriteString("  " + S.WizardChoice.Render("[2]") + " Create worktree\n")
 
 	case stepRepoSelect:
-		b.WriteString(wizardLabelStyle.Render(fmt.Sprintf("Step %d: Select repository", nextStep())))
+		b.WriteString(S.WizardLabel.Render("Select repository"))
 		b.WriteString("\n\n  ")
 		for i, name := range m.repoNames {
 			if i == m.repoSelected {
-				b.WriteString(wizardSelectedToolStyle.Render(" " + name + " "))
+				b.WriteString(S.WizardSelectedTool.Render(" " + name + " "))
 			} else {
-				b.WriteString(wizardToolStyle.Render(" " + name + " "))
+				b.WriteString(S.WizardTool.Render(" " + name + " "))
 			}
 			if i < len(m.repoNames)-1 {
 				b.WriteString("  ")
 			}
 		}
-		b.WriteString("\n\n  " + dimStyle.Render("← → to select, enter to confirm"))
+		b.WriteString("\n\n  " + S.Dim.Render("← → to select, enter to confirm"))
 
 	case stepDirInput:
-		if m.dirSource == dirWorktree {
-			nextStep() // count the dir-source step
-			nextStep() // count the repo-select step
-		} else {
-			nextStep() // count the dir-source step
-		}
 		if m.dirSource == dirExisting {
-			b.WriteString(wizardLabelStyle.Render(fmt.Sprintf("Step %d: Enter directory path", nextStep())))
+			b.WriteString(S.WizardLabel.Render("Enter directory path"))
 		} else {
-			b.WriteString(wizardLabelStyle.Render(fmt.Sprintf("Step %d: Enter branch name", nextStep())))
+			b.WriteString(S.WizardLabel.Render("Enter branch name"))
 		}
 		b.WriteString("\n\n")
 		b.WriteString("  " + m.dirInput.View())
 
 	case stepTool:
-		if m.dirSource == dirWorktree {
-			stepNum = 4
-		} else {
-			stepNum = 3
-		}
-		b.WriteString(wizardLabelStyle.Render(fmt.Sprintf("Step %d: Select AI tool", stepNum)))
+		b.WriteString(S.WizardLabel.Render("Select AI tool"))
 		b.WriteString("\n\n  ")
 		for i, name := range m.toolNames {
 			if i == m.toolSelected {
-				b.WriteString(wizardSelectedToolStyle.Render(" " + name + " "))
+				b.WriteString(S.WizardSelectedTool.Render(" " + name + " "))
 			} else {
-				b.WriteString(wizardToolStyle.Render(" " + name + " "))
+				b.WriteString(S.WizardTool.Render(" " + name + " "))
 			}
 			if i < len(m.toolNames)-1 {
 				b.WriteString("  ")
 			}
 		}
-		b.WriteString("\n\n  " + dimStyle.Render("← → to select, enter to confirm"))
+		b.WriteString("\n\n  " + S.Dim.Render("← → to select, enter to confirm"))
 
 	case stepPrompt:
-		if m.dirSource == dirWorktree {
-			stepNum = 5
-		} else {
-			stepNum = 4
-		}
-		b.WriteString(wizardLabelStyle.Render(fmt.Sprintf("Step %d: Prompt or plan file (optional)", stepNum)))
+		b.WriteString(S.WizardLabel.Render("Prompt or plan file (optional)"))
 		b.WriteString("\n\n")
 		b.WriteString("  " + m.promptInput.View())
-		b.WriteString("\n\n  " + dimStyle.Render("enter to continue (leave empty for interactive)"))
+		b.WriteString("\n\n  " + S.Dim.Render("enter to continue (leave empty for interactive)"))
 
 	case stepConfirm:
-		if m.dirSource == dirWorktree {
-			stepNum = 6
-		} else {
-			stepNum = 5
-		}
-		b.WriteString(wizardLabelStyle.Render(fmt.Sprintf("Step %d: Confirm", stepNum)))
+		b.WriteString(S.WizardLabel.Render("Confirm"))
 		b.WriteString("\n\n")
 		if m.dirSource == dirExisting {
 			b.WriteString("  Directory:  " + m.resolvedDir + "\n")
@@ -517,12 +558,17 @@ func (m CreateModel) View() string {
 			prompt = "(interactive)"
 		}
 		b.WriteString("  Prompt:     " + prompt + "\n")
-		b.WriteString("\n  " + dimStyle.Render("enter to create, esc to cancel"))
+		b.WriteString("\n  " + S.Dim.Render("enter to create, esc to cancel"))
 	}
 
 	if m.err != "" {
-		b.WriteString("\n\n  " + errorStyle.Render(m.err))
+		b.WriteString("\n\n  " + S.Error.Render(m.err))
 	}
+
+	// Status bar.
+	b.WriteString("\n\n")
+	b.WriteString(S.HelpKey.Render("enter") + S.HelpDesc.Render(":next") + "  " +
+		S.HelpKey.Render("esc") + S.HelpDesc.Render(":cancel"))
 
 	return b.String()
 }
@@ -538,31 +584,3 @@ func expandHome(path string) string {
 	}
 	return path
 }
-
-// Additional styles for the wizard.
-var (
-	wizardTitleStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("5")).
-				Padding(1, 2)
-
-	wizardLabelStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("7"))
-
-	wizardChoiceStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("6")).
-				Bold(true)
-
-	wizardSelectedToolStyle = lipgloss.NewStyle().
-				Background(lipgloss.Color("5")).
-				Foreground(lipgloss.Color("15")).
-				Bold(true)
-
-	wizardToolStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("7"))
-
-	dimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("8")).
-			Italic(true)
-)
