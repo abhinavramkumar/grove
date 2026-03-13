@@ -109,20 +109,39 @@ func (m *ListModel) FilterInputView() string {
 	return m.filterInput.View()
 }
 
+// statusCounts returns running, stopped, finished counts from all sessions (unfiltered).
+func (m *ListModel) statusCounts() (int, int, int) {
+	var running, stopped, finished int
+	for _, sess := range m.Sessions {
+		switch sess.Status {
+		case "running":
+			running++
+		case "stopped":
+			stopped++
+		default:
+			finished++
+		}
+	}
+	return running, stopped, finished
+}
+
 // View renders the session list table.
 func (m *ListModel) View() string {
 	filtered := m.FilteredSessions()
 
+	// Header bar.
+	running, stopped, finished := m.statusCounts()
+	headerBar := lipgloss.NewStyle().Bold(true).Foreground(ActiveTheme.Accent).Render("grove") +
+		S.HelpDesc.Render(" │ ") +
+		lipgloss.NewStyle().Foreground(ActiveTheme.Green).Render(fmt.Sprintf("%d running", running)) +
+		S.HelpDesc.Render(" / ") +
+		lipgloss.NewStyle().Foreground(ActiveTheme.Yellow).Render(fmt.Sprintf("%d stopped", stopped)) +
+		S.HelpDesc.Render(" / ") +
+		lipgloss.NewStyle().Foreground(ActiveTheme.FgDim).Render(fmt.Sprintf("%d finished", finished))
+
 	if len(filtered) == 0 {
-		msg := "No sessions. Press n to create one."
-		if m.FilterText != "" {
-			msg = "No matching sessions."
-		}
-		if m.Width > 0 {
-			return lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center,
-				emptyStyle.Render(msg))
-		}
-		return emptyStyle.Render(msg)
+		msg := emptyStateView(m.FilterText != "", m.Width, m.Height-1)
+		return headerBar + "\n" + msg
 	}
 
 	colGap := "  "
@@ -140,21 +159,31 @@ func (m *ListModel) View() string {
 
 	var b strings.Builder
 
-	// Header.
+	// Header bar.
+	b.WriteString(headerBar)
+	b.WriteByte('\n')
+
+	// Table header.
 	hdr := fmt.Sprintf("  %-*s%s%-*s%s%-*s%s%-*s%s%*s",
 		nameW, "NAME", colGap,
 		repoW, "REPO", colGap,
 		toolW, "TOOL", colGap,
 		dirW, "DIRECTORY", colGap,
 		durW, "AGE")
-	b.WriteString(headerStyle.Render(hdr))
+	b.WriteString(S.Header.Render(hdr))
 	b.WriteByte('\n')
 
-	// Determine how many rows we can show (height minus header line).
-	maxRows := m.Height - 1
+	// Separator line.
+	b.WriteString(lipgloss.NewStyle().Foreground(ActiveTheme.FgFaint).Render(strings.Repeat("─", m.Width)))
+	b.WriteByte('\n')
+
+	// Determine how many rows we can show (height minus header bar, table header, separator).
+	maxRows := m.Height - 3
 	if maxRows < 1 {
 		maxRows = len(filtered)
 	}
+
+	zebraRow := lipgloss.NewStyle().Background(ActiveTheme.BgAlt)
 
 	for i, sess := range filtered {
 		if i >= maxRows {
@@ -177,9 +206,13 @@ func (m *ListModel) View() string {
 			durW, dur)
 
 		if i == m.Cursor {
-			row = selectedRow.Width(m.Width).Render(row)
+			row = "▎" + S.SelectedRow.Width(m.Width-1).Render(row)
+		} else if sess.Status == "finished" {
+			row = S.FinishedRow.Render(row)
+		} else if i%2 == 1 {
+			row = zebraRow.Render(row)
 		} else {
-			row = normalRow.Render(row)
+			row = S.NormalRow.Render(row)
 		}
 
 		b.WriteString(row)
@@ -189,6 +222,29 @@ func (m *ListModel) View() string {
 	}
 
 	return b.String()
+}
+
+// emptyStateView renders a centered empty state.
+func emptyStateView(hasFilter bool, width, height int) string {
+	if hasFilter {
+		msg := S.Empty.Render("No matching sessions.")
+		if width > 0 {
+			return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, msg)
+		}
+		return msg
+	}
+
+	diamond := lipgloss.NewStyle().Foreground(ActiveTheme.Accent).Bold(true).Render("◇")
+	title := S.Empty.Render("No sessions yet")
+	subtitle := lipgloss.NewStyle().Foreground(ActiveTheme.FgDim).Render("Start your first AI coding session")
+	pill := S.HelpKey.Render("n") + " " + S.HelpDesc.Render("new session")
+
+	content := diamond + "\n" + title + "\n" + subtitle + "\n\n" + pill
+
+	if width > 0 {
+		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, content)
+	}
+	return content
 }
 
 // repoDisplayName returns the base directory name of the session's repo root,
