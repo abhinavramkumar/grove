@@ -31,7 +31,8 @@ type createErrMsg struct{ err error }
 type createStep int
 
 const (
-	stepDirSource createStep = iota
+	stepDirSource  createStep = iota
+	stepRepoSelect            // worktree mode: pick a registered repo
 	stepDirInput
 	stepTool
 	stepPrompt
@@ -63,8 +64,14 @@ type CreateModel struct {
 	config  *config.Config
 	manager *session.Manager
 
+	// Repo selection (worktree mode)
+	repoNames    []string            // basenames for display
+	repoConfigs  []config.RepoConfig // parallel to repoNames
+	repoSelected int
+	selectedRepo *config.RepoConfig
+
 	// Resolved values
-	resolvedDir string // set after step validation
+	resolvedDir    string // set after step validation
 	worktreeBranch string
 
 	// Display
@@ -165,6 +172,8 @@ func (m CreateModel) handleKey(msg tea.KeyMsg) (CreateModel, tea.Cmd) {
 	switch m.step {
 	case stepDirSource:
 		return m.handleDirSourceKey(msg)
+	case stepRepoSelect:
+		return m.handleRepoSelectKey(msg)
 	case stepDirInput:
 		return m.handleDirInputKey(msg)
 	case stepTool:
@@ -190,6 +199,57 @@ func (m CreateModel) handleDirSourceKey(msg tea.KeyMsg) (CreateModel, tea.Cmd) {
 		return m, textinput.Blink
 	case "2", "w":
 		m.dirSource = dirWorktree
+		if len(m.config.Repos) == 0 {
+			m.err = "No repos configured. Run: grove repo add"
+			return m, nil
+		}
+		// Populate repo list for selection.
+		m.repoNames = make([]string, len(m.config.Repos))
+		m.repoConfigs = make([]config.RepoConfig, len(m.config.Repos))
+		for i, r := range m.config.Repos {
+			m.repoNames[i] = filepath.Base(r.RepoRoot)
+			m.repoConfigs[i] = r
+		}
+		// Try auto-detect from cwd.
+		m.repoSelected = 0
+		if cwd, err := worktree.GetMainRepoPath("."); err == nil {
+			for i, r := range m.repoConfigs {
+				if r.RepoRoot == cwd {
+					m.repoSelected = i
+					break
+				}
+			}
+		}
+		m.step = stepRepoSelect
+		m.err = ""
+		return m, nil
+	}
+	return m, nil
+}
+
+// --- Step: repo selection (worktree mode) ---
+
+func (m CreateModel) handleRepoSelectKey(msg tea.KeyMsg) (CreateModel, tea.Cmd) {
+	switch msg.String() {
+	case "left", "h":
+		if m.repoSelected > 0 {
+			m.repoSelected--
+		}
+	case "right", "l":
+		if m.repoSelected < len(m.repoNames)-1 {
+			m.repoSelected++
+		}
+	case "enter":
+		m.selectedRepo = &m.repoConfigs[m.repoSelected]
+		// Pre-select repo-specific AI tool if configured.
+		if effectiveTool := m.config.EffectiveAITool(m.selectedRepo); effectiveTool != "" {
+			for i, name := range m.toolNames {
+				if name == effectiveTool {
+					m.toolSelected = i
+					break
+				}
+			}
+		}
 		m.dirInput.Placeholder = "branch name"
 		m.step = stepDirInput
 		m.dirInput.Focus()
@@ -292,25 +352,25 @@ func (m CreateModel) createSession() tea.Cmd {
 	return func() tea.Msg {
 		dir := m.resolvedDir
 		var wtPtr *string
+		var repoRootPtr *string
 
-		// If worktree mode, create the worktree first.
+		// If worktree mode, create the worktree using selected repo config.
 		if m.dirSource == dirWorktree {
-			repoDir, err := worktree.GetMainRepoPath(".")
-			if err != nil {
-				return createErrMsg{fmt.Errorf("finding repo: %w", err)}
-			}
-			basePath := m.config.Defaults.WorktreeBase
+			repo := m.selectedRepo
+			repoRoot := repo.RepoRoot
+			basePath := m.config.EffectiveWorktreeBase(repo)
 			if basePath == "" {
-				basePath = filepath.Join(filepath.Dir(repoDir), "worktrees")
+				basePath = filepath.Join(filepath.Dir(repoRoot), "worktrees")
 			}
 
-			wtPath, err := worktree.Create(repoDir, basePath, m.worktreeBranch, "")
+			wtPath, err := worktree.Create(repoRoot, basePath, m.worktreeBranch, "")
 			if err != nil {
 				return createErrMsg{fmt.Errorf("creating worktree: %w", err)}
 			}
 
-			if len(m.config.Worktree.SetupCommands) > 0 {
-				if err := worktree.RunSetupCommands(wtPath, m.config.Worktree.SetupCommands); err != nil {
+			setupCmds := m.config.EffectiveSetupCommands(repo)
+			if len(setupCmds) > 0 {
+				if err := worktree.RunSetupCommands(wtPath, setupCmds); err != nil {
 					return createErrMsg{fmt.Errorf("setup commands: %w", err)}
 				}
 			}
@@ -318,6 +378,16 @@ func (m CreateModel) createSession() tea.Cmd {
 			dir = wtPath
 			branch := m.worktreeBranch
 			wtPtr = &branch
+			repoRootPtr = &repoRoot
+		}
+
+		// For existing directory mode, auto-detect repo.
+		if m.dirSource == dirExisting {
+			if rr, err := worktree.GetMainRepoPath(m.resolvedDir); err == nil {
+				if m.config.RepoFor(rr) != nil {
+					repoRootPtr = &rr
+				}
+			}
 		}
 
 		toolName := m.toolNames[m.toolSelected]
@@ -339,7 +409,7 @@ func (m CreateModel) createSession() tea.Cmd {
 			name = worktree.SanitizeBranchName(m.worktreeBranch)
 		}
 
-		sess, err := m.manager.Create(name, toolName, dir, wtPtr, prompt, planFile, nil)
+		sess, err := m.manager.Create(name, toolName, dir, wtPtr, prompt, planFile, repoRootPtr)
 		if err != nil {
 			return createErrMsg{err}
 		}
@@ -355,24 +425,54 @@ func (m CreateModel) View() string {
 	b.WriteString(title)
 	b.WriteString("\n\n")
 
+	// Dynamic step numbering: worktree mode has an extra repo-select step.
+	stepNum := 1
+	nextStep := func() int { stepNum++; return stepNum - 1 }
+
 	switch m.step {
 	case stepDirSource:
-		b.WriteString(wizardLabelStyle.Render("Step 1: Directory source"))
+		b.WriteString(wizardLabelStyle.Render(fmt.Sprintf("Step %d: Directory source", nextStep())))
 		b.WriteString("\n\n")
 		b.WriteString("  " + wizardChoiceStyle.Render("[1]") + " Use existing directory\n")
 		b.WriteString("  " + wizardChoiceStyle.Render("[2]") + " Create worktree\n")
 
+	case stepRepoSelect:
+		b.WriteString(wizardLabelStyle.Render(fmt.Sprintf("Step %d: Select repository", nextStep())))
+		b.WriteString("\n\n  ")
+		for i, name := range m.repoNames {
+			if i == m.repoSelected {
+				b.WriteString(wizardSelectedToolStyle.Render(" " + name + " "))
+			} else {
+				b.WriteString(wizardToolStyle.Render(" " + name + " "))
+			}
+			if i < len(m.repoNames)-1 {
+				b.WriteString("  ")
+			}
+		}
+		b.WriteString("\n\n  " + dimStyle.Render("← → to select, enter to confirm"))
+
 	case stepDirInput:
-		if m.dirSource == dirExisting {
-			b.WriteString(wizardLabelStyle.Render("Step 1: Enter directory path"))
+		if m.dirSource == dirWorktree {
+			nextStep() // count the dir-source step
+			nextStep() // count the repo-select step
 		} else {
-			b.WriteString(wizardLabelStyle.Render("Step 1: Enter branch name"))
+			nextStep() // count the dir-source step
+		}
+		if m.dirSource == dirExisting {
+			b.WriteString(wizardLabelStyle.Render(fmt.Sprintf("Step %d: Enter directory path", nextStep())))
+		} else {
+			b.WriteString(wizardLabelStyle.Render(fmt.Sprintf("Step %d: Enter branch name", nextStep())))
 		}
 		b.WriteString("\n\n")
 		b.WriteString("  " + m.dirInput.View())
 
 	case stepTool:
-		b.WriteString(wizardLabelStyle.Render("Step 2: Select AI tool"))
+		if m.dirSource == dirWorktree {
+			stepNum = 4
+		} else {
+			stepNum = 3
+		}
+		b.WriteString(wizardLabelStyle.Render(fmt.Sprintf("Step %d: Select AI tool", stepNum)))
 		b.WriteString("\n\n  ")
 		for i, name := range m.toolNames {
 			if i == m.toolSelected {
@@ -387,17 +487,28 @@ func (m CreateModel) View() string {
 		b.WriteString("\n\n  " + dimStyle.Render("← → to select, enter to confirm"))
 
 	case stepPrompt:
-		b.WriteString(wizardLabelStyle.Render("Step 3: Prompt or plan file (optional)"))
+		if m.dirSource == dirWorktree {
+			stepNum = 5
+		} else {
+			stepNum = 4
+		}
+		b.WriteString(wizardLabelStyle.Render(fmt.Sprintf("Step %d: Prompt or plan file (optional)", stepNum)))
 		b.WriteString("\n\n")
 		b.WriteString("  " + m.promptInput.View())
 		b.WriteString("\n\n  " + dimStyle.Render("enter to continue (leave empty for interactive)"))
 
 	case stepConfirm:
-		b.WriteString(wizardLabelStyle.Render("Step 4: Confirm"))
+		if m.dirSource == dirWorktree {
+			stepNum = 6
+		} else {
+			stepNum = 5
+		}
+		b.WriteString(wizardLabelStyle.Render(fmt.Sprintf("Step %d: Confirm", stepNum)))
 		b.WriteString("\n\n")
 		if m.dirSource == dirExisting {
 			b.WriteString("  Directory:  " + m.resolvedDir + "\n")
 		} else {
+			b.WriteString("  Repo:       " + m.selectedRepo.RepoRoot + "\n")
 			b.WriteString("  Worktree:   " + m.worktreeBranch + "\n")
 		}
 		b.WriteString("  Tool:       " + m.toolNames[m.toolSelected] + "\n")
