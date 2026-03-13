@@ -2,9 +2,12 @@ package app
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/abhinav/grove/internal/store"
@@ -12,48 +15,109 @@ import (
 
 // ListModel holds the session list state.
 type ListModel struct {
-	Sessions []*store.Session
-	Cursor   int
-	Width    int
-	Height   int
+	Sessions  []*store.Session
+	Cursor    int
+	Width     int
+	Height    int
+	RepoOrder []string // repo basenames in config order, for sorting
+
+	Filtering  bool   // true when filter input is focused
+	FilterText string // current filter query
+
+	filterInput textinput.Model
 }
 
-// Selected returns the currently selected session, or nil if the list is empty.
+// Selected returns the currently selected session from the filtered list, or nil.
 func (m *ListModel) Selected() *store.Session {
-	if len(m.Sessions) == 0 {
+	filtered := m.FilteredSessions()
+	if len(filtered) == 0 {
 		return nil
 	}
-	if m.Cursor >= len(m.Sessions) {
-		m.Cursor = len(m.Sessions) - 1
+	if m.Cursor >= len(filtered) {
+		m.Cursor = len(filtered) - 1
 	}
-	return m.Sessions[m.Cursor]
+	return filtered[m.Cursor]
 }
 
-// MoveUp moves the cursor up one row.
+// MoveUp moves the cursor up one row within the filtered list.
 func (m *ListModel) MoveUp() {
 	if m.Cursor > 0 {
 		m.Cursor--
 	}
 }
 
-// MoveDown moves the cursor down one row.
+// MoveDown moves the cursor down one row within the filtered list.
 func (m *ListModel) MoveDown() {
-	if m.Cursor < len(m.Sessions)-1 {
+	filtered := m.FilteredSessions()
+	if m.Cursor < len(filtered)-1 {
 		m.Cursor++
 	}
 }
 
-// ClampCursor ensures the cursor is within bounds.
+// ClampCursor ensures the cursor is within bounds of the filtered list.
 func (m *ListModel) ClampCursor() {
-	if m.Cursor >= len(m.Sessions) {
-		m.Cursor = max(0, len(m.Sessions)-1)
+	filtered := m.FilteredSessions()
+	if m.Cursor >= len(filtered) {
+		m.Cursor = max(0, len(filtered)-1)
 	}
+}
+
+// FilteredSessions returns the sessions matching the current filter.
+func (m *ListModel) FilteredSessions() []*store.Session {
+	return filterSessions(m.Sessions, m.FilterText)
+}
+
+// StartFilter initializes and focuses the filter text input.
+func (m *ListModel) StartFilter() {
+	ti := textinput.New()
+	ti.Placeholder = "type to filter…"
+	ti.CharLimit = 64
+	ti.Width = 30
+	ti.SetValue(m.FilterText)
+	ti.Focus()
+	m.filterInput = ti
+	m.Filtering = true
+}
+
+// ClearFilter resets the filter and exits filter mode.
+func (m *ListModel) ClearFilter() {
+	m.FilterText = ""
+	m.filterInput.Blur()
+	m.Filtering = false
+	m.Cursor = 0
+}
+
+// CommitFilter keeps the current filter text and exits filter mode.
+func (m *ListModel) CommitFilter() {
+	m.FilterText = m.filterInput.Value()
+	m.filterInput.Blur()
+	m.Filtering = false
+}
+
+// HandleFilterKey processes a key event while the filter input is focused.
+// Returns a tea.Cmd if the input needs to update (e.g., cursor blink).
+func (m *ListModel) HandleFilterKey(msg tea.KeyMsg) tea.Cmd {
+	var cmd tea.Cmd
+	m.filterInput, cmd = m.filterInput.Update(msg)
+	m.FilterText = m.filterInput.Value()
+	m.Cursor = 0 // reset cursor as filter changes
+	return cmd
+}
+
+// FilterInputView returns the rendered filter text input.
+func (m *ListModel) FilterInputView() string {
+	return m.filterInput.View()
 }
 
 // View renders the session list table.
 func (m *ListModel) View() string {
-	if len(m.Sessions) == 0 {
+	filtered := m.FilteredSessions()
+
+	if len(filtered) == 0 {
 		msg := "No sessions. Press n to create one."
+		if m.FilterText != "" {
+			msg = "No matching sessions."
+		}
 		if m.Width > 0 {
 			return lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center,
 				emptyStyle.Render(msg))
@@ -61,16 +125,15 @@ func (m *ListModel) View() string {
 		return emptyStyle.Render(msg)
 	}
 
-	// Column widths: status+name, tool, directory, duration.
-	// Reserve space: 2 for status dot + space, some padding between columns.
 	colGap := "  "
 
-	// Determine available width for directory truncation.
+	// Column widths: status dot(2) + name + repo + tool + directory + age.
 	toolW := 10
+	repoW := 14
 	durW := 10
-	fixedW := 2 + toolW + durW + len(colGap)*3 // dot+space, gaps
 	nameW := 20
-	dirW := m.Width - fixedW - nameW
+	fixedW := 2 + nameW + repoW + toolW + durW + len(colGap)*4
+	dirW := m.Width - fixedW
 	if dirW < 10 {
 		dirW = 10
 	}
@@ -78,8 +141,9 @@ func (m *ListModel) View() string {
 	var b strings.Builder
 
 	// Header.
-	hdr := fmt.Sprintf("  %-*s%s%-*s%s%-*s%s%*s",
+	hdr := fmt.Sprintf("  %-*s%s%-*s%s%-*s%s%-*s%s%*s",
 		nameW, "NAME", colGap,
+		repoW, "REPO", colGap,
 		toolW, "TOOL", colGap,
 		dirW, "DIRECTORY", colGap,
 		durW, "AGE")
@@ -89,23 +153,25 @@ func (m *ListModel) View() string {
 	// Determine how many rows we can show (height minus header line).
 	maxRows := m.Height - 1
 	if maxRows < 1 {
-		maxRows = len(m.Sessions)
+		maxRows = len(filtered)
 	}
 
-	for i, sess := range m.Sessions {
+	for i, sess := range filtered {
 		if i >= maxRows {
 			break
 		}
 
 		dot := statusDot(sess.Status)
 		name := truncate(sess.Name, nameW-1)
+		repo := truncate(repoDisplayName(sess), repoW)
 		tool := truncate(sess.Tool, toolW)
 		dir := truncateLeft(sess.Directory, dirW)
 		dur := formatDuration(time.Since(sess.CreatedAt))
 
-		row := fmt.Sprintf("%s %-*s%s%-*s%s%-*s%s%*s",
+		row := fmt.Sprintf("%s %-*s%s%-*s%s%-*s%s%-*s%s%*s",
 			dot,
 			nameW-1, name, colGap,
+			repoW, repo, colGap,
 			toolW, tool, colGap,
 			dirW, dir, colGap,
 			durW, dur)
@@ -117,12 +183,40 @@ func (m *ListModel) View() string {
 		}
 
 		b.WriteString(row)
-		if i < len(m.Sessions)-1 && i < maxRows-1 {
+		if i < len(filtered)-1 && i < maxRows-1 {
 			b.WriteByte('\n')
 		}
 	}
 
 	return b.String()
+}
+
+// repoDisplayName returns the base directory name of the session's repo root,
+// or "—" if no repo root is set.
+func repoDisplayName(sess *store.Session) string {
+	if sess.RepoRoot == nil || *sess.RepoRoot == "" {
+		return "—"
+	}
+	return filepath.Base(*sess.RepoRoot)
+}
+
+// filterSessions returns sessions matching query across name, repo, tool, and directory.
+// If query is empty, all sessions are returned.
+func filterSessions(sessions []*store.Session, query string) []*store.Session {
+	if query == "" {
+		return sessions
+	}
+	q := strings.ToLower(query)
+	var result []*store.Session
+	for _, sess := range sessions {
+		if strings.Contains(strings.ToLower(sess.Name), q) ||
+			strings.Contains(strings.ToLower(repoDisplayName(sess)), q) ||
+			strings.Contains(strings.ToLower(sess.Tool), q) ||
+			strings.Contains(strings.ToLower(sess.Directory), q) {
+			result = append(result, sess)
+		}
+	}
+	return result
 }
 
 // formatDuration returns a human-friendly short duration string.

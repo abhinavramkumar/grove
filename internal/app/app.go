@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -93,6 +94,23 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateHelp(msg)
 	case viewPruneConfirm:
 		return m.updatePruneConfirm(msg)
+	}
+
+	// When filter input is active, intercept key events.
+	if m.list.Filtering {
+		if msg, ok := msg.(tea.KeyMsg); ok {
+			switch msg.Type {
+			case tea.KeyEsc:
+				m.list.ClearFilter()
+				return m, nil
+			case tea.KeyEnter:
+				m.list.CommitFilter()
+				return m, nil
+			default:
+				cmd := m.list.HandleFilterKey(msg)
+				return m, cmd
+			}
+		}
 	}
 
 	switch msg := msg.(type) {
@@ -258,6 +276,10 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.Prune):
 		return m, m.startPrune()
 
+	case key.Matches(msg, keys.Filter):
+		m.list.StartFilter()
+		return m, textinput.Blink
+
 	case key.Matches(msg, keys.Help):
 		m.view = viewHelp
 		return m, nil
@@ -285,10 +307,18 @@ func (m AppModel) View() string {
 
 	body := m.list.View()
 
-	// Status bar.
-	bar := statusBarStyle.Width(m.list.Width).Render(statusBarHelp())
-	if m.flash != "" {
+	// Status bar — changes depending on filter state.
+	var bar string
+	if m.list.Filtering {
+		bar = filterBarStyle.Width(m.list.Width).Render(
+			filterLabelStyle.Render("filter: ") + m.list.FilterInputView())
+	} else if m.list.FilterText != "" {
+		bar = statusBarStyle.Width(m.list.Width).Render(
+			filterActiveIndicator.Render("filter: "+m.list.FilterText) + "  " + statusBarHelp())
+	} else if m.flash != "" {
 		bar = statusBarStyle.Width(m.list.Width).Render(m.flash)
+	} else {
+		bar = statusBarStyle.Width(m.list.Width).Render(statusBarHelp())
 	}
 
 	return body + "\n" + bar
@@ -541,7 +571,7 @@ func (m AppModel) viewHelpOverlay() string {
 	bindings := []key.Binding{
 		keys.Up, keys.Down, keys.Attach, keys.Peek,
 		keys.New, keys.Delete, keys.Stop, keys.Resume,
-		keys.Prune, keys.Help, keys.Quit, keys.Escape,
+		keys.Prune, keys.Filter, keys.Help, keys.Quit, keys.Escape,
 	}
 
 	var b strings.Builder

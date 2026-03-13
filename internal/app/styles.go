@@ -39,6 +39,20 @@ var (
 	errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 	infoStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 
+	// Filter bar styles.
+	filterBarStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("15")).
+			Background(lipgloss.Color("235")).
+			Padding(0, 1)
+
+	filterLabelStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("6")).
+				Bold(true)
+
+	filterActiveIndicator = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("8")).
+				Italic(true)
+
 	// Overlay (help, confirmation dialogs).
 	overlayStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).

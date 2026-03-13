@@ -14,6 +14,7 @@ type keyMap struct {
 	Stop   key.Binding
 	Resume key.Binding
 	Prune  key.Binding
+	Filter key.Binding
 	Help   key.Binding
 	Quit   key.Binding
 	Escape key.Binding
@@ -56,6 +57,10 @@ var keys = keyMap{
 		key.WithKeys("x"),
 		key.WithHelp("x", "prune worktree"),
 	),
+	Filter: key.NewBinding(
+		key.WithKeys("ctrl+f"),
+		key.WithHelp("ctrl+f", "filter"),
+	),
 	Help: key.NewBinding(
 		key.WithKeys("?"),
 		key.WithHelp("?", "help"),
@@ -74,7 +79,7 @@ var keys = keyMap{
 func statusBarHelp() string {
 	bindings := []key.Binding{
 		keys.Attach, keys.Delete, keys.Stop,
-		keys.Resume, keys.New, keys.Prune, keys.Help, keys.Quit,
+		keys.Resume, keys.New, keys.Prune, keys.Filter, keys.Help, keys.Quit,
 	}
 
 	var s string
