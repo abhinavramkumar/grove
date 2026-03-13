@@ -19,12 +19,26 @@ sessions resume with `--resume`, OpenCode with `--continue`.
 ## Install
 
 ```bash
-# From source
-./install.sh
+curl -sSL https://raw.githubusercontent.com/abhinavramkumar/grove/main/install-remote.sh | bash
+```
 
-# Or manually
-go build -o grove ./cmd/grove
-cp grove /usr/local/bin/
+Or install a specific version:
+
+```bash
+VERSION=v0.1.0 curl -sSL https://raw.githubusercontent.com/abhinavramkumar/grove/main/install-remote.sh | bash
+```
+
+Custom install directory:
+
+```bash
+INSTALL_DIR=~/.local/bin curl -sSL https://raw.githubusercontent.com/abhinavramkumar/grove/main/install-remote.sh | bash
+```
+
+From source:
+
+```bash
+git clone https://github.com/abhinavramkumar/grove.git && cd grove
+./install.sh
 ```
 
 ## Usage
