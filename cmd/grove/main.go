@@ -91,7 +91,7 @@ func cmdNew(args []string) {
 	mgr, s := openManager()
 	defer s.Close()
 
-	sess, err := mgr.Create(*name, *tool, *dir, nil, *prompt, *plan)
+	sess, err := mgr.Create(*name, *tool, *dir, nil, *prompt, *plan, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating session: %v\n", err)
 		os.Exit(1)

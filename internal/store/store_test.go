@@ -1,9 +1,13 @@
 package store
 
 import (
+	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+
+	_ "modernc.org/sqlite"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -23,7 +27,7 @@ func TestCreateAndGetSession(t *testing.T) {
 
 	wt := "/tmp/wt"
 	prompt := "do stuff"
-	sess, err := s.CreateSession("test-session", "claude", "/tmp/dir", &wt, &prompt, nil, nil)
+	sess, err := s.CreateSession("test-session", "claude", "/tmp/dir", &wt, &prompt, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("creating session: %v", err)
 	}
@@ -59,11 +63,11 @@ func TestCreateAndGetSession(t *testing.T) {
 func TestListSessions(t *testing.T) {
 	s := newTestStore(t)
 
-	_, err := s.CreateSession("s1", "claude", "/dir1", nil, nil, nil, nil)
+	_, err := s.CreateSession("s1", "claude", "/dir1", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("creating s1: %v", err)
 	}
-	_, err = s.CreateSession("s2", "codex", "/dir2", nil, nil, nil, nil)
+	_, err = s.CreateSession("s2", "codex", "/dir2", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("creating s2: %v", err)
 	}
@@ -80,7 +84,7 @@ func TestListSessions(t *testing.T) {
 func TestUpdateSessionStatus(t *testing.T) {
 	s := newTestStore(t)
 
-	sess, err := s.CreateSession("test", "claude", "/dir", nil, nil, nil, nil)
+	sess, err := s.CreateSession("test", "claude", "/dir", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +108,7 @@ func TestUpdateSessionStatus(t *testing.T) {
 func TestDeleteSession(t *testing.T) {
 	s := newTestStore(t)
 
-	sess, err := s.CreateSession("test", "claude", "/dir", nil, nil, nil, nil)
+	sess, err := s.CreateSession("test", "claude", "/dir", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,5 +146,118 @@ func TestDefaultDBPath(t *testing.T) {
 	expected := filepath.Join(home, ".local", "share", "grove", "grove.db")
 	if got != expected {
 		t.Fatalf("expected %s, got %s", expected, got)
+	}
+}
+
+func TestCreateSessionWithRepoRoot(t *testing.T) {
+	s := newTestStore(t)
+
+	repoRoot := "/home/user/myrepo"
+	sess, err := s.CreateSession("test", "claude", "/dir", nil, nil, nil, nil, &repoRoot)
+	if err != nil {
+		t.Fatalf("creating session: %v", err)
+	}
+
+	if sess.RepoRoot == nil {
+		t.Fatal("expected repo_root to be non-nil")
+	}
+	if *sess.RepoRoot != repoRoot {
+		t.Fatalf("expected repo_root %q, got %q", repoRoot, *sess.RepoRoot)
+	}
+
+	got, err := s.GetSession(sess.ID)
+	if err != nil {
+		t.Fatalf("getting session: %v", err)
+	}
+	if got.RepoRoot == nil {
+		t.Fatal("expected repo_root to persist as non-nil")
+	}
+	if *got.RepoRoot != repoRoot {
+		t.Fatalf("expected repo_root %q after get, got %q", repoRoot, *got.RepoRoot)
+	}
+}
+
+func TestCreateSessionWithNilRepoRoot(t *testing.T) {
+	s := newTestStore(t)
+
+	sess, err := s.CreateSession("test", "claude", "/dir", nil, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("creating session: %v", err)
+	}
+
+	if sess.RepoRoot != nil {
+		t.Fatalf("expected nil repo_root, got %q", *sess.RepoRoot)
+	}
+}
+
+func TestMigrationV2ToV3(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+
+	// Create a v2 database manually.
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("opening db: %v", err)
+	}
+
+	_, err = db.Exec(`
+		CREATE TABLE sessions (
+			id              TEXT PRIMARY KEY,
+			name            TEXT NOT NULL,
+			tool            TEXT NOT NULL,
+			worktree        TEXT,
+			directory       TEXT NOT NULL,
+			prompt          TEXT,
+			plan_file       TEXT,
+			tmux_session    TEXT NOT NULL,
+			tool_session_id TEXT,
+			status          TEXT DEFAULT 'running',
+			created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+			stopped_at      DATETIME
+		);
+	`)
+	if err != nil {
+		t.Fatalf("creating v2 table: %v", err)
+	}
+
+	// Insert a row in v2 schema (no repo_root column).
+	_, err = db.Exec(`
+		INSERT INTO sessions (id, name, tool, directory, tmux_session, status)
+		VALUES ('oldid123', 'old-session', 'claude', '/old/dir', 'grove-oldid123', 'stopped')
+	`)
+	if err != nil {
+		t.Fatalf("inserting v2 row: %v", err)
+	}
+
+	_, err = db.Exec(fmt.Sprintf("PRAGMA user_version = %d", 2))
+	if err != nil {
+		t.Fatalf("setting user_version: %v", err)
+	}
+	db.Close()
+
+	// Now open with Store, which runs migration v2->v3.
+	s, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("opening store after migration: %v", err)
+	}
+	defer s.Close()
+
+	// Verify old session has nil repo_root.
+	old, err := s.GetSession("oldid123")
+	if err != nil {
+		t.Fatalf("getting old session: %v", err)
+	}
+	if old.RepoRoot != nil {
+		t.Fatalf("expected nil repo_root for migrated session, got %q", *old.RepoRoot)
+	}
+
+	// Verify new sessions with repo_root work.
+	repoRoot := "/new/repo"
+	newSess, err := s.CreateSession("new", "claude", "/new/dir", nil, nil, nil, nil, &repoRoot)
+	if err != nil {
+		t.Fatalf("creating new session: %v", err)
+	}
+	if newSess.RepoRoot == nil || *newSess.RepoRoot != repoRoot {
+		t.Fatalf("expected repo_root %q, got %v", repoRoot, newSess.RepoRoot)
 	}
 }

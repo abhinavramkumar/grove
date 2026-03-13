@@ -25,7 +25,7 @@ func NewManager(s *store.Store, cfg *config.Config) *Manager {
 
 // Create builds a new session: inserts it in the store, starts a tmux session,
 // and returns the session record.
-func (m *Manager) Create(name, tool, dir string, worktree *string, prompt, planFile string) (*store.Session, error) {
+func (m *Manager) Create(name, tool, dir string, worktree *string, prompt, planFile string, repoRoot *string) (*store.Session, error) {
 	adapter, ok := m.Adapters[tool]
 	if !ok {
 		return nil, fmt.Errorf("unknown tool %q", tool)
@@ -44,7 +44,7 @@ func (m *Manager) Create(name, tool, dir string, worktree *string, prompt, planF
 		toolSessPtr = &toolSessionID
 	}
 
-	sess, err := m.Store.CreateSession(name, tool, dir, worktree, promptPtr, planPtr, toolSessPtr)
+	sess, err := m.Store.CreateSession(name, tool, dir, worktree, promptPtr, planPtr, toolSessPtr, repoRoot)
 	if err != nil {
 		return nil, fmt.Errorf("creating session record: %w", err)
 	}

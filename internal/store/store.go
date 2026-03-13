@@ -19,6 +19,7 @@ type Session struct {
 	Tool          string
 	Worktree      *string
 	Directory     string
+	RepoRoot      *string
 	Prompt        *string
 	PlanFile      *string
 	TmuxSession   string
@@ -82,7 +83,7 @@ func generateID() (string, error) {
 }
 
 // CreateSession inserts a new session and returns it with its generated ID.
-func (s *Store) CreateSession(name, tool, directory string, worktree, prompt, planFile, toolSessionID *string) (*Session, error) {
+func (s *Store) CreateSession(name, tool, directory string, worktree, prompt, planFile, toolSessionID, repoRoot *string) (*Session, error) {
 	id, err := generateID()
 	if err != nil {
 		return nil, fmt.Errorf("generating id: %w", err)
@@ -91,9 +92,9 @@ func (s *Store) CreateSession(name, tool, directory string, worktree, prompt, pl
 	tmuxSession := "grove-" + id
 
 	_, err = s.db.Exec(`
-		INSERT INTO sessions (id, name, tool, worktree, directory, prompt, plan_file, tmux_session, tool_session_id, status)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running')
-	`, id, name, tool, worktree, directory, prompt, planFile, tmuxSession, toolSessionID)
+		INSERT INTO sessions (id, name, tool, worktree, directory, repo_root, prompt, plan_file, tmux_session, tool_session_id, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running')
+	`, id, name, tool, worktree, directory, repoRoot, prompt, planFile, tmuxSession, toolSessionID)
 	if err != nil {
 		return nil, fmt.Errorf("inserting session: %w", err)
 	}
@@ -101,7 +102,7 @@ func (s *Store) CreateSession(name, tool, directory string, worktree, prompt, pl
 	return s.GetSession(id)
 }
 
-const sessionColumns = `id, name, tool, worktree, directory, prompt, plan_file, tmux_session, tool_session_id, status, created_at, stopped_at`
+const sessionColumns = `id, name, tool, worktree, directory, repo_root, prompt, plan_file, tmux_session, tool_session_id, status, created_at, stopped_at`
 
 // GetSession retrieves a session by ID.
 func (s *Store) GetSession(id string) (*Session, error) {
@@ -178,7 +179,7 @@ func scanFrom(s scanner) (*Session, error) {
 	var stoppedAt *string
 	err := s.Scan(
 		&sess.ID, &sess.Name, &sess.Tool, &sess.Worktree,
-		&sess.Directory, &sess.Prompt, &sess.PlanFile,
+		&sess.Directory, &sess.RepoRoot, &sess.Prompt, &sess.PlanFile,
 		&sess.TmuxSession, &sess.ToolSessionID, &sess.Status,
 		&createdAt, &stoppedAt,
 	)

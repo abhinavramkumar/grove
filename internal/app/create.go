@@ -339,7 +339,7 @@ func (m CreateModel) createSession() tea.Cmd {
 			name = worktree.SanitizeBranchName(m.worktreeBranch)
 		}
 
-		sess, err := m.manager.Create(name, toolName, dir, wtPtr, prompt, planFile)
+		sess, err := m.manager.Create(name, toolName, dir, wtPtr, prompt, planFile, nil)
 		if err != nil {
 			return createErrMsg{err}
 		}

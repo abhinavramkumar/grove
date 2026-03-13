@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-const currentVersion = 2
+const currentVersion = 3
 
 func migrate(db *sql.DB) error {
 	var version int
@@ -25,6 +25,7 @@ func migrate(db *sql.DB) error {
 				tool            TEXT NOT NULL,
 				worktree        TEXT,
 				directory       TEXT NOT NULL,
+				repo_root       TEXT,
 				prompt          TEXT,
 				plan_file       TEXT,
 				tmux_session    TEXT NOT NULL,
@@ -42,6 +43,12 @@ func migrate(db *sql.DB) error {
 		// Existing v1 databases: add the tool_session_id column.
 		if _, err := db.Exec(`ALTER TABLE sessions ADD COLUMN tool_session_id TEXT`); err != nil {
 			return fmt.Errorf("adding tool_session_id column: %w", err)
+		}
+	}
+
+	if version >= 2 && version < 3 {
+		if _, err := db.Exec(`ALTER TABLE sessions ADD COLUMN repo_root TEXT`); err != nil {
+			return fmt.Errorf("adding repo_root column: %w", err)
 		}
 	}
 
