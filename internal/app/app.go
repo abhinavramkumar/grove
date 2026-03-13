@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -66,11 +67,16 @@ type AppModel struct {
 
 // New creates the root model.
 func New(s *store.Store, cfg *config.Config, mgr *session.Manager) AppModel {
+	var repoOrder []string
+	for _, repo := range cfg.Repos {
+		repoOrder = append(repoOrder, filepath.Base(repo.RepoRoot))
+	}
 	return AppModel{
 		view:    viewList,
 		store:   s,
 		config:  cfg,
 		manager: mgr,
+		list:    ListModel{RepoOrder: repoOrder},
 	}
 }
 
