@@ -1,14 +1,18 @@
 package app
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/abhinav/grove/internal/config"
 	"github.com/abhinav/grove/internal/session"
 	"github.com/abhinav/grove/internal/store"
+	"github.com/abhinav/grove/internal/worktree"
 )
 
 // view represents which screen is active.
@@ -18,6 +22,8 @@ const (
 	viewList view = iota
 	viewPeek
 	viewNew
+	viewHelp
+	viewPruneConfirm
 )
 
 // tickMsg triggers periodic reconciliation and list refresh.
@@ -35,16 +41,26 @@ type infoMsg string
 // attachDoneMsg is sent when the user detaches from a tmux session.
 type attachDoneMsg struct{ err error }
 
+// pruneConfirm holds state for the worktree prune confirmation dialog.
+type pruneConfirm struct {
+	session  *store.Session
+	dirty    bool // true if worktree has uncommitted changes
+	repoDir  string
+}
+
 // AppModel is the root Bubbletea model.
 type AppModel struct {
 	list    ListModel
 	create  CreateModel
 	peek    PeekModel
+	prune   pruneConfirm
 	view    view
 	store   *store.Store
 	config  *config.Config
 	manager *session.Manager
 	flash   string // transient message displayed in the status bar
+	width   int
+	height  int
 }
 
 // New creates the root model.
@@ -73,11 +89,17 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateCreate(msg)
 	case viewPeek:
 		return m.updatePeek(msg)
+	case viewHelp:
+		return m.updateHelp(msg)
+	case viewPruneConfirm:
+		return m.updatePruneConfirm(msg)
 	}
 
 	switch msg := msg.(type) {
 
 	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
 		m.list.Width = msg.Width
 		// Reserve 1 line for the status bar.
 		m.list.Height = msg.Height - 1
@@ -102,6 +124,15 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case attachDoneMsg:
 		// After detaching from tmux, refresh the list.
 		return m, m.reconcileAndLoad()
+
+	case pruneReadyMsg:
+		m.prune = pruneConfirm{
+			session: msg.session,
+			dirty:   msg.dirty,
+			repoDir: msg.repoDir,
+		}
+		m.view = viewPruneConfirm
+		return m, nil
 
 	case tea.KeyMsg:
 		// Clear flash on any keypress.
@@ -224,6 +255,13 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.view = viewPeek
 		return m, m.peek.Init()
 
+	case key.Matches(msg, keys.Prune):
+		return m, m.startPrune()
+
+	case key.Matches(msg, keys.Help):
+		m.view = viewHelp
+		return m, nil
+
 	case key.Matches(msg, keys.Escape):
 		// No-op in list view.
 		return m, nil
@@ -239,6 +277,10 @@ func (m AppModel) View() string {
 		return m.create.View()
 	case viewPeek:
 		return m.peek.View()
+	case viewHelp:
+		return m.viewHelpOverlay()
+	case viewPruneConfirm:
+		return m.viewPruneConfirmOverlay()
 	}
 
 	body := m.list.View()
@@ -358,4 +400,161 @@ func (m AppModel) resumeSelected() tea.Cmd {
 		}
 		return sessionsMsg(sessions)
 	}
+}
+
+// --- Prune worktree ---
+
+// pruneReadyMsg is sent after checking the worktree state.
+type pruneReadyMsg struct {
+	session *store.Session
+	dirty   bool
+	repoDir string
+}
+
+func (m AppModel) startPrune() tea.Cmd {
+	sess := m.list.Selected()
+	if sess == nil {
+		return nil
+	}
+	if sess.Worktree == nil {
+		return func() tea.Msg { return infoMsg("session has no worktree") }
+	}
+	wtPath := *sess.Worktree
+	return func() tea.Msg {
+		repoDir, err := worktree.GetMainRepoPath(wtPath)
+		if err != nil {
+			return errMsg{fmt.Errorf("getting repo path: %w", err)}
+		}
+		clean, err := worktree.IsWorktreeClean(wtPath)
+		if err != nil {
+			// If we can't check, treat as dirty to be safe.
+			return pruneReadyMsg{session: sess, dirty: true, repoDir: repoDir}
+		}
+		return pruneReadyMsg{session: sess, dirty: !clean, repoDir: repoDir}
+	}
+}
+
+func (m AppModel) updatePruneConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.list.Width = msg.Width
+		m.list.Height = msg.Height - 1
+		return m, nil
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "y", "Y":
+			m.view = viewList
+			return m, m.executePrune()
+		case "n", "N", "esc":
+			m.view = viewList
+			m.flash = infoStyle.Render("prune cancelled")
+			return m, nil
+		}
+	case tickMsg:
+		return m, tea.Batch(m.reconcileAndLoad(), tickCmd())
+	case sessionsMsg:
+		m.list.Sessions = msg
+		m.list.ClampCursor()
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m AppModel) executePrune() tea.Cmd {
+	sess := m.prune.session
+	repoDir := m.prune.repoDir
+	force := m.prune.dirty
+	wtPath := *sess.Worktree
+	sessionID := sess.ID
+	stopped := sess.Status == "stopped" || sess.Status == "finished"
+
+	return func() tea.Msg {
+		if err := worktree.Remove(repoDir, wtPath, force); err != nil {
+			return errMsg{fmt.Errorf("removing worktree: %w", err)}
+		}
+		// If session is stopped/finished, also delete it.
+		if stopped {
+			_ = m.manager.Delete(sessionID)
+		}
+		sessions, err := m.store.ListSessions()
+		if err != nil {
+			return errMsg{err}
+		}
+		return sessionsMsg(sessions)
+	}
+}
+
+func (m AppModel) viewPruneConfirmOverlay() string {
+	sess := m.prune.session
+	wtPath := ""
+	if sess.Worktree != nil {
+		wtPath = *sess.Worktree
+	}
+
+	var msg strings.Builder
+	msg.WriteString("Prune worktree for session: " + sess.Name + "\n")
+	msg.WriteString("Path: " + wtPath + "\n\n")
+
+	if m.prune.dirty {
+		msg.WriteString(errorStyle.Render("WARNING: worktree has uncommitted changes!") + "\n\n")
+	}
+
+	if sess.Status == "stopped" || sess.Status == "finished" {
+		msg.WriteString("Session is " + sess.Status + " and will also be deleted.\n\n")
+	}
+
+	msg.WriteString("Are you sure? (y/n)")
+
+	overlay := overlayStyle.Render(msg.String())
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, overlay)
+}
+
+// --- Help overlay ---
+
+func (m AppModel) updateHelp(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.list.Width = msg.Width
+		m.list.Height = msg.Height - 1
+		return m, nil
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, keys.Help), key.Matches(msg, keys.Escape):
+			m.view = viewList
+			return m, nil
+		}
+	case tickMsg:
+		return m, tea.Batch(m.reconcileAndLoad(), tickCmd())
+	case sessionsMsg:
+		m.list.Sessions = msg
+		m.list.ClampCursor()
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m AppModel) viewHelpOverlay() string {
+	bindings := []key.Binding{
+		keys.Up, keys.Down, keys.Attach, keys.Peek,
+		keys.New, keys.Delete, keys.Stop, keys.Resume,
+		keys.Prune, keys.Help, keys.Quit, keys.Escape,
+	}
+
+	var b strings.Builder
+	b.WriteString("Keybindings\n")
+	b.WriteString(strings.Repeat("─", 28) + "\n")
+
+	for _, binding := range bindings {
+		h := binding.Help()
+		b.WriteString(fmt.Sprintf("  %-12s %s\n", h.Key, h.Desc))
+	}
+
+	b.WriteString("\nPress ? or esc to close")
+
+	overlay := overlayStyle.Render(b.String())
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, overlay)
 }

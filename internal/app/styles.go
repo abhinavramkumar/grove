@@ -38,6 +38,12 @@ var (
 	// Error / info flash messages.
 	errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 	infoStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+
+	// Overlay (help, confirmation dialogs).
+	overlayStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("8")).
+			Padding(1, 3)
 )
 
 // statusDot returns a colored dot for the given session status.
