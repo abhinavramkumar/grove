@@ -42,8 +42,11 @@ grove                    # Launch TUI (default)
 grove new --tool claude --dir . --prompt "fix the bug"
 grove list               # Tab-separated session list
 grove attach <id>        # Attach to session directly
+grove repo add           # Add repo config (TUI wizard)
+grove repo list          # List configured repos
 grove update             # Self-update to latest release
 grove --version          # Print version
+grove <command> --help   # Help for any command
 ```
 
 ## TUI Keybindings
