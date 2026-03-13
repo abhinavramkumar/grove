@@ -1,0 +1,10 @@
+                  
+  Add Repository  
+                  
+  1 Root ── 2 Worktree ── 3 AI Tool ── 4 Setup ── 5 Save
+
+Step 4: Setup commands (optional)
+
+  > e.g. npm install, make build (comma-separated)            
+
+  comma-separated, enter to continue (empty = inherit global)

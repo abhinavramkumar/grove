@@ -1,0 +1,26 @@
+                      ╭──────────────────────────────────╮                      
+                      │                                  │                      
+                      │   Keybindings                    │                      
+                      │   ────────────────────────────   │                      
+                      │                                  │                      
+                      │   NAVIGATION                     │                      
+                      │     j/k      move up/down        │                      
+                      │     enter    attach to session   │                      
+                      │     p        peek at session     │                      
+                      │                                  │                      
+                      │   ACTIONS                        │                      
+                      │     n        new session         │                      
+                      │     s        stop session        │                      
+                      │     r        resume session      │                      
+                      │     d        delete session      │                      
+                      │     x        prune worktree      │                      
+                      │                                  │                      
+                      │   GENERAL                        │                      
+                      │     ctrl+f   filter sessions     │                      
+                      │     t        change theme        │                      
+                      │     ?        toggle help         │                      
+                      │     q        quit                │                      
+                      │                                  │                      
+                      │   Press ? or esc to close        │                      
+                      │                                  │                      
+                      ╰──────────────────────────────────╯                      

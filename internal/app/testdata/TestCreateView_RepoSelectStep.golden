@@ -1,0 +1,12 @@
+               
+  New Session  
+               
+  1 Source ── 2 Repo ── 3 Branch ── 4 Tool ── 5 Prompt ── 6 Confirm
+
+Select repository
+
+   fermat    grove 
+
+  ← → to select, enter to confirm
+
+enter:next  esc:cancel

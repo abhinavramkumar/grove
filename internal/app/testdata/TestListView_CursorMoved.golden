@@ -1,0 +1,6 @@
+grove │ 1 running / 1 stopped / 1 finished
+  NAME                  REPO            TOOL        DIRECTORY                AGE
+────────────────────────────────────────────────────────────────────────────────
+● feat-auth            myapp           claude      ~trees/feat-auth     AGE
+▎● fix-bug              backend         copilot     ~rktrees/fix-bug     AGE
+● refactor             —               claude      ~ktrees/refactor     AGE
