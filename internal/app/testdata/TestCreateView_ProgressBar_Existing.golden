@@ -1,0 +1,14 @@
+               
+  New Session  
+               
+  1 Source ── 2 Directory ── 3 Tool ── 4 Prompt ── 5 Confirm
+
+Confirm
+
+  Directory:  /tmp/test
+  Tool:       claude
+  Prompt:     (interactive)
+
+  enter to create, esc to cancel
+
+enter:next  esc:cancel

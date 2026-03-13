@@ -27,6 +27,7 @@ type RepoConfig struct {
 type DefaultsConfig struct {
 	AITool       string `toml:"ai_tool"`
 	WorktreeBase string `toml:"worktree_base"`
+	Theme        string `toml:"theme,omitempty"`
 }
 
 type WorktreeConfig struct {

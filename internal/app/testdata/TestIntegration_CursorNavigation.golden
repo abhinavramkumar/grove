@@ -1,0 +1,25 @@
+[?25l[?2004hgrove │ 1 running / 1 stopped / 1 finished[K
+  NAME                  REPO            TOOL        DIRECTORY                AGE
+────────────────────────────────────────────────────────────────────────────────
+▎● feat-auth            myapp           claude      ~trees/feat-auth     AGE[K
+● fix-bug              backend         copilot     ~rktrees/fix-bug     AGE[K
+● refactor             —               claude      ~ktrees/refactor     AGE[K
+ running │ enter:attach p:peek s:stop  n:new ?:help q:quit                      [6A
+
+
+● feat-auth            myapp           claude      ~trees/feat-auth     AGE[K
+▎● fix-bug              backend         copilot     ~rktrees/fix-bug     AGE[K
+
+ stopped │ r:resume d:delete  n:new ?:help q:quit                               [6A
+
+
+
+● fix-bug              backend         copilot     ~rktrees/fix-bug     AGE[K
+▎● refactor             —               claude      ~ktrees/refactor     AGE[K
+ finished │ d:delete x:prune  n:new ?:help q:quit                               [6A
+
+
+
+▎● fix-bug              backend         copilot     ~rktrees/fix-bug     AGE[K
+● refactor             —               claude      ~ktrees/refactor     AGE[K
+ stopped │ r:resume d:delete  n:new ?:help q:quit                               [2K[?2004l[?25h[?1002l[?1003l[?1006l

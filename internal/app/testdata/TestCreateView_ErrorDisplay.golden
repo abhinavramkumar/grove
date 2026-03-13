@@ -1,0 +1,14 @@
+               
+  New Session  
+               
+  1 Source ── 2 Directory ── 3 Tool ── 4 Prompt ── 5 Confirm
+
+Directory source
+
+  [1] Use existing directory
+  [2] Create worktree
+
+
+  something went wrong
+
+enter:next  esc:cancel

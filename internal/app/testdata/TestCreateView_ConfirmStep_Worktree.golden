@@ -1,0 +1,15 @@
+               
+  New Session  
+               
+  1 Source ── 2 Repo ── 3 Branch ── 4 Tool ── 5 Prompt ── 6 Confirm
+
+Confirm
+
+  Repo:       /projects/fermat
+  Worktree:   feat/test
+  Tool:       claude
+  Prompt:     (interactive)
+
+  enter to create, esc to cancel
+
+enter:next  esc:cancel

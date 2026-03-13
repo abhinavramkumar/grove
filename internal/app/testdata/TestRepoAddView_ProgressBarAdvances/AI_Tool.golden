@@ -1,0 +1,10 @@
+                  
+  Add Repository  
+                  
+  1 Root ── 2 Worktree ── 3 AI Tool ── 4 Setup ── 5 Save
+
+Step 3: AI tool override (optional)
+
+  > leave empty to inherit global default                     
+
+  enter to continue (empty = inherit global default)

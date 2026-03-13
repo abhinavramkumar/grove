@@ -30,6 +30,26 @@ const (
 	repoStepFinalConfirm
 )
 
+// repoAddStepNames are the step labels for the progress bar.
+var repoAddStepNames = []string{"Root", "Worktree", "AI Tool", "Setup", "Save"}
+
+// repoAddStepIndex maps repoAddStep to progress bar index.
+func repoAddStepIndex(step repoAddStep) int {
+	switch step {
+	case repoStepConfirmRoot:
+		return 0
+	case repoStepWorktreeBase:
+		return 1
+	case repoStepAITool:
+		return 2
+	case repoStepSetupCommands:
+		return 3
+	case repoStepFinalConfirm:
+		return 4
+	}
+	return 0
+}
+
 // RepoAddModel is the interactive wizard for adding a repo to the config.
 type RepoAddModel struct {
 	step repoAddStep
@@ -246,55 +266,59 @@ func (m RepoAddModel) handleFinalConfirmKey(msg tea.KeyMsg) (RepoAddModel, tea.C
 func (m RepoAddModel) View() string {
 	var b strings.Builder
 
-	title := wizardTitleStyle.Render("Add Repository")
+	title := S.WizardTitle.Render("Add Repository")
 	b.WriteString(title)
+	b.WriteString("\n")
+
+	// Step progress bar.
+	b.WriteString("  " + renderStepProgress(repoAddStepIndex(m.step), repoAddStepNames))
 	b.WriteString("\n\n")
 
 	switch m.step {
 	case repoStepConfirmRoot:
-		b.WriteString(wizardLabelStyle.Render("Step 1: Confirm repository root"))
+		b.WriteString(S.WizardLabel.Render("Step 1: Confirm repository root"))
 		b.WriteString("\n\n")
-		b.WriteString("  " + wizardChoiceStyle.Render(m.repoRoot))
-		b.WriteString("\n\n  " + dimStyle.Render("enter to confirm, esc to cancel"))
+		b.WriteString("  " + S.WizardChoice.Render(m.repoRoot))
+		b.WriteString("\n\n  " + S.Dim.Render("enter to confirm, esc to cancel"))
 
 	case repoStepWorktreeBase:
-		b.WriteString(wizardLabelStyle.Render("Step 2: Worktree base directory"))
+		b.WriteString(S.WizardLabel.Render("Step 2: Worktree base directory"))
 		b.WriteString("\n\n")
 		b.WriteString("  " + m.worktreeBaseInput.View())
-		b.WriteString("\n\n  " + dimStyle.Render("enter to accept (empty = default shown above), esc to cancel"))
+		b.WriteString("\n\n  " + S.Dim.Render("enter to accept (empty = default shown above), esc to cancel"))
 
 	case repoStepAITool:
-		b.WriteString(wizardLabelStyle.Render("Step 3: AI tool override (optional)"))
+		b.WriteString(S.WizardLabel.Render("Step 3: AI tool override (optional)"))
 		b.WriteString("\n\n")
 		b.WriteString("  " + m.aiToolInput.View())
-		b.WriteString("\n\n  " + dimStyle.Render("enter to continue (empty = inherit global default)"))
+		b.WriteString("\n\n  " + S.Dim.Render("enter to continue (empty = inherit global default)"))
 
 	case repoStepSetupCommands:
-		b.WriteString(wizardLabelStyle.Render("Step 4: Setup commands (optional)"))
+		b.WriteString(S.WizardLabel.Render("Step 4: Setup commands (optional)"))
 		b.WriteString("\n\n")
 		b.WriteString("  " + m.setupCommandsInput.View())
-		b.WriteString("\n\n  " + dimStyle.Render("comma-separated, enter to continue (empty = inherit global)"))
+		b.WriteString("\n\n  " + S.Dim.Render("comma-separated, enter to continue (empty = inherit global)"))
 
 	case repoStepFinalConfirm:
-		b.WriteString(wizardLabelStyle.Render("Step 5: Confirm & Save"))
+		b.WriteString(S.WizardLabel.Render("Step 5: Confirm & Save"))
 		b.WriteString("\n\n")
-		b.WriteString("  " + wizardLabelStyle.Render("Repo root:     ") + m.repoRoot + "\n")
-		b.WriteString("  " + wizardLabelStyle.Render("Worktree base: ") + m.worktreeBase + "\n")
+		b.WriteString("  " + S.WizardLabel.Render("Repo root:     ") + m.repoRoot + "\n")
+		b.WriteString("  " + S.WizardLabel.Render("Worktree base: ") + m.worktreeBase + "\n")
 		aiTool := m.aiTool
 		if aiTool == "" {
-			aiTool = dimStyle.Render("(global default)")
+			aiTool = S.Dim.Render("(global default)")
 		}
-		b.WriteString("  " + wizardLabelStyle.Render("AI tool:       ") + aiTool + "\n")
+		b.WriteString("  " + S.WizardLabel.Render("AI tool:       ") + aiTool + "\n")
 		setupCmds := strings.Join(m.setupCommands, ", ")
 		if setupCmds == "" {
-			setupCmds = dimStyle.Render("(global default)")
+			setupCmds = S.Dim.Render("(global default)")
 		}
-		b.WriteString("  " + wizardLabelStyle.Render("Setup cmds:    ") + setupCmds + "\n")
-		b.WriteString("\n  " + dimStyle.Render("enter to save, esc to cancel"))
+		b.WriteString("  " + S.WizardLabel.Render("Setup cmds:    ") + setupCmds + "\n")
+		b.WriteString("\n  " + S.Dim.Render("enter to save, esc to cancel"))
 	}
 
 	if m.err != "" {
-		b.WriteString("\n\n  " + errorStyle.Render(m.err))
+		b.WriteString("\n\n  " + S.Error.Render(m.err))
 	}
 
 	return b.String()

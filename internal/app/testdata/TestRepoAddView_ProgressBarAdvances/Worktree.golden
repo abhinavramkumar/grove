@@ -1,0 +1,10 @@
+                  
+  Add Repository  
+                  
+  1 Root ── 2 Worktree ── 3 AI Tool ── 4 Setup ── 5 Save
+
+Step 2: Worktree base directory
+
+  > /tmp/test-repo-worktrees                                  
+
+  enter to accept (empty = default shown above), esc to cancel

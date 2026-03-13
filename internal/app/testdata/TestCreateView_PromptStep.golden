@@ -1,0 +1,12 @@
+               
+  New Session  
+               
+  1 Source ── 2 Directory ── 3 Tool ── 4 Prompt ── 5 Confirm
+
+Prompt or plan file (optional)
+
+  > prompt or plan file path (optional)                       
+
+  enter to continue (leave empty for interactive)
+
+enter:next  esc:cancel

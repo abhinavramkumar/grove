@@ -26,6 +26,7 @@ const (
 	viewNew
 	viewHelp
 	viewPruneConfirm
+	viewThemePicker
 )
 
 // tickMsg triggers periodic reconciliation and list refresh.
@@ -45,28 +46,33 @@ type attachDoneMsg struct{ err error }
 
 // pruneConfirm holds state for the worktree prune confirmation dialog.
 type pruneConfirm struct {
-	session  *store.Session
-	dirty    bool // true if worktree has uncommitted changes
-	repoDir  string
+	session *store.Session
+	dirty   bool // true if worktree has uncommitted changes
+	repoDir string
 }
 
 // AppModel is the root Bubbletea model.
 type AppModel struct {
-	list    ListModel
-	create  CreateModel
-	peek    PeekModel
-	prune   pruneConfirm
-	view    view
-	store   *store.Store
-	config  *config.Config
-	manager *session.Manager
-	flash   string // transient message displayed in the status bar
-	width   int
-	height  int
+	list        ListModel
+	create      CreateModel
+	peek        PeekModel
+	prune       pruneConfirm
+	themePicker ThemePickerModel
+	view        view
+	store       *store.Store
+	config      *config.Config
+	manager     *session.Manager
+	flash       string // transient message displayed in the status bar
+	width       int
+	height      int
 }
 
 // New creates the root model.
 func New(s *store.Store, cfg *config.Config, mgr *session.Manager) AppModel {
+	if cfg.Defaults.Theme != "" {
+		SetTheme(ThemeByName(cfg.Defaults.Theme))
+	}
+
 	var repoOrder []string
 	for _, repo := range cfg.Repos {
 		repoOrder = append(repoOrder, filepath.Base(repo.RepoRoot))
@@ -100,6 +106,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateHelp(msg)
 	case viewPruneConfirm:
 		return m.updatePruneConfirm(msg)
+	case viewThemePicker:
+		return m.updateThemePicker(msg)
 	}
 
 	// When filter input is active, intercept key events.
@@ -125,8 +133,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.list.Width = msg.Width
-		// Reserve 1 line for the status bar.
-		m.list.Height = msg.Height - 1
+		m.list.Height = msg.Height - 2
 		return m, nil
 
 	case tickMsg:
@@ -138,11 +145,11 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case errMsg:
-		m.flash = errorStyle.Render(msg.err.Error())
+		m.flash = S.Error.Render(msg.err.Error())
 		return m, nil
 
 	case infoMsg:
-		m.flash = infoStyle.Render(string(msg))
+		m.flash = S.Info.Render(string(msg))
 		return m, nil
 
 	case attachDoneMsg:
@@ -170,15 +177,17 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m AppModel) updateCreate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
 		m.list.Width = msg.Width
-		m.list.Height = msg.Height - 1
+		m.list.Height = msg.Height - 2
 		// Also forward to create model.
 		m.create, _ = m.create.Update(msg)
 		return m, nil
 
 	case createDoneMsg:
 		m.view = viewList
-		m.flash = infoStyle.Render("created session: " + msg.session.Name)
+		m.flash = S.Info.Render("created session: " + msg.session.Name)
 		return m, m.reconcileAndLoad()
 
 	case createCancelMsg:
@@ -209,8 +218,10 @@ func (m AppModel) updateCreate(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m AppModel) updatePeek(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
 		m.list.Width = msg.Width
-		m.list.Height = msg.Height - 1
+		m.list.Height = msg.Height - 2
 		m.peek, _ = m.peek.Update(msg)
 		return m, nil
 
@@ -272,10 +283,10 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if sess.Status != "running" {
-			m.flash = infoStyle.Render("can only peek running sessions")
+			m.flash = S.Info.Render("can only peek running sessions")
 			return m, nil
 		}
-		m.peek = NewPeekModel(sess, m.manager, m.list.Width, m.list.Height+1)
+		m.peek = NewPeekModel(sess, m.manager, m.list.Width, m.list.Height+2)
 		m.view = viewPeek
 		return m, m.peek.Init()
 
@@ -285,6 +296,11 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.Filter):
 		m.list.StartFilter()
 		return m, textinput.Blink
+
+	case key.Matches(msg, keys.Theme):
+		m.themePicker = NewThemePickerModel(m.config)
+		m.view = viewThemePicker
+		return m, nil
 
 	case key.Matches(msg, keys.Help):
 		m.view = viewHelp
@@ -298,6 +314,51 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// contextualStatusBar renders a context-sensitive status bar based on the selected session.
+func (m AppModel) contextualStatusBar() string {
+	var left, middle, right strings.Builder
+
+	// Left: selected session status label.
+	sess := m.list.Selected()
+	if sess != nil {
+		var statusStyle lipgloss.Style
+		switch sess.Status {
+		case "running":
+			statusStyle = S.ContextualStatusLabel.Foreground(ActiveTheme.Green)
+		case "stopped":
+			statusStyle = S.ContextualStatusLabel.Foreground(ActiveTheme.Yellow)
+		default:
+			statusStyle = S.ContextualStatusLabel.Foreground(ActiveTheme.FgDim)
+		}
+		left.WriteString(statusStyle.Render(sess.Status))
+	}
+
+	// Middle: session-specific keys.
+	if sess != nil {
+		middle.WriteString(S.HelpDesc.Render(" │ "))
+		switch sess.Status {
+		case "running":
+			middle.WriteString(S.HelpKey.Render("enter") + S.HelpDesc.Render(":attach "))
+			middle.WriteString(S.HelpKey.Render("p") + S.HelpDesc.Render(":peek "))
+			middle.WriteString(S.HelpKey.Render("s") + S.HelpDesc.Render(":stop"))
+		case "stopped":
+			middle.WriteString(S.HelpKey.Render("r") + S.HelpDesc.Render(":resume "))
+			middle.WriteString(S.HelpKey.Render("d") + S.HelpDesc.Render(":delete"))
+		default: // finished
+			middle.WriteString(S.HelpKey.Render("d") + S.HelpDesc.Render(":delete "))
+			middle.WriteString(S.HelpKey.Render("x") + S.HelpDesc.Render(":prune"))
+		}
+	}
+
+	// Right: always shown.
+	right.WriteString("  ")
+	right.WriteString(S.HelpKey.Render("n") + S.HelpDesc.Render(":new "))
+	right.WriteString(S.HelpKey.Render("?") + S.HelpDesc.Render(":help "))
+	right.WriteString(S.HelpKey.Render("q") + S.HelpDesc.Render(":quit"))
+
+	return left.String() + middle.String() + right.String()
+}
+
 // View renders the current view.
 func (m AppModel) View() string {
 	switch m.view {
@@ -309,6 +370,8 @@ func (m AppModel) View() string {
 		return m.viewHelpOverlay()
 	case viewPruneConfirm:
 		return m.viewPruneConfirmOverlay()
+	case viewThemePicker:
+		return m.viewThemePickerOverlay()
 	}
 
 	body := m.list.View()
@@ -316,15 +379,15 @@ func (m AppModel) View() string {
 	// Status bar — changes depending on filter state.
 	var bar string
 	if m.list.Filtering {
-		bar = filterBarStyle.Width(m.list.Width).Render(
-			filterLabelStyle.Render("filter: ") + m.list.FilterInputView())
+		bar = S.FilterBar.Width(m.list.Width).Render(
+			S.FilterLabel.Render("filter: ") + m.list.FilterInputView())
 	} else if m.list.FilterText != "" {
-		bar = statusBarStyle.Width(m.list.Width).Render(
-			filterActiveIndicator.Render("filter: "+m.list.FilterText) + "  " + statusBarHelp())
+		bar = S.StatusBar.Width(m.list.Width).Render(
+			S.FilterActive.Render("filter: "+m.list.FilterText) + "  " + m.contextualStatusBar())
 	} else if m.flash != "" {
-		bar = statusBarStyle.Width(m.list.Width).Render(m.flash)
+		bar = S.StatusBar.Width(m.list.Width).Render(m.flash)
 	} else {
-		bar = statusBarStyle.Width(m.list.Width).Render(statusBarHelp())
+		bar = S.StatusBar.Width(m.list.Width).Render(m.contextualStatusBar())
 	}
 
 	return body + "\n" + bar
@@ -476,7 +539,7 @@ func (m AppModel) updatePruneConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.list.Width = msg.Width
-		m.list.Height = msg.Height - 1
+		m.list.Height = msg.Height - 2
 		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -485,7 +548,7 @@ func (m AppModel) updatePruneConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.executePrune()
 		case "n", "N", "esc":
 			m.view = viewList
-			m.flash = infoStyle.Render("prune cancelled")
+			m.flash = S.Info.Render("prune cancelled")
 			return m, nil
 		}
 	case tickMsg:
@@ -534,16 +597,17 @@ func (m AppModel) viewPruneConfirmOverlay() string {
 	msg.WriteString("Path: " + wtPath + "\n\n")
 
 	if m.prune.dirty {
-		msg.WriteString(errorStyle.Render("WARNING: worktree has uncommitted changes!") + "\n\n")
+		msg.WriteString(S.Error.Render("WARNING: worktree has uncommitted changes!") + "\n\n")
 	}
 
 	if sess.Status == "stopped" || sess.Status == "finished" {
 		msg.WriteString("Session is " + sess.Status + " and will also be deleted.\n\n")
 	}
 
-	msg.WriteString("Are you sure? (y/n)")
+	msg.WriteString(S.HelpKey.Render("y") + S.HelpDesc.Render(":confirm") + "  " +
+		S.HelpKey.Render("n") + S.HelpDesc.Render(":cancel"))
 
-	overlay := overlayStyle.Render(msg.String())
+	overlay := S.Overlay.Render(msg.String())
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, overlay)
 }
 
@@ -555,7 +619,7 @@ func (m AppModel) updateHelp(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.list.Width = msg.Width
-		m.list.Height = msg.Height - 1
+		m.list.Height = msg.Height - 2
 		return m, nil
 	case tea.KeyMsg:
 		switch {
@@ -574,23 +638,71 @@ func (m AppModel) updateHelp(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m AppModel) viewHelpOverlay() string {
-	bindings := []key.Binding{
-		keys.Up, keys.Down, keys.Attach, keys.Peek,
-		keys.New, keys.Delete, keys.Stop, keys.Resume,
-		keys.Prune, keys.Filter, keys.Help, keys.Quit, keys.Escape,
+	helpLine := func(k, desc string) string {
+		return "  " + S.HelpKey.Render(fmt.Sprintf("%-8s", k)) + " " + S.HelpDesc.Render(desc) + "\n"
 	}
 
 	var b strings.Builder
 	b.WriteString("Keybindings\n")
-	b.WriteString(strings.Repeat("─", 28) + "\n")
+	b.WriteString(strings.Repeat("─", 28) + "\n\n")
 
-	for _, binding := range bindings {
-		h := binding.Help()
-		b.WriteString(fmt.Sprintf("  %-12s %s\n", h.Key, h.Desc))
+	b.WriteString(S.HelpKey.Render("NAVIGATION") + "\n")
+	b.WriteString(helpLine("j/k", "move up/down"))
+	b.WriteString(helpLine("enter", "attach to session"))
+	b.WriteString(helpLine("p", "peek at session"))
+	b.WriteByte('\n')
+
+	b.WriteString(S.HelpKey.Render("ACTIONS") + "\n")
+	b.WriteString(helpLine("n", "new session"))
+	b.WriteString(helpLine("s", "stop session"))
+	b.WriteString(helpLine("r", "resume session"))
+	b.WriteString(helpLine("d", "delete session"))
+	b.WriteString(helpLine("x", "prune worktree"))
+	b.WriteByte('\n')
+
+	b.WriteString(S.HelpKey.Render("GENERAL") + "\n")
+	b.WriteString(helpLine("ctrl+f", "filter sessions"))
+	b.WriteString(helpLine("t", "change theme"))
+	b.WriteString(helpLine("?", "toggle help"))
+	b.WriteString(helpLine("q", "quit"))
+
+	b.WriteString("\nPress " + S.HelpKey.Render("?") + " or " + S.HelpKey.Render("esc") + " to close")
+
+	overlay := S.Overlay.Render(b.String())
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, overlay)
+}
+
+// --- Theme picker ---
+
+func (m AppModel) updateThemePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.list.Width = msg.Width
+		m.list.Height = msg.Height - 2
+		return m, nil
+	case themePickerDoneMsg:
+		m.view = viewList
+		return m, nil
+	case themePickerCancelMsg:
+		m.view = viewList
+		return m, nil
+	case tickMsg:
+		return m, tea.Batch(m.reconcileAndLoad(), tickCmd())
+	case sessionsMsg:
+		m.list.Sessions = msg
+		m.list.ClampCursor()
+		return m, nil
 	}
 
-	b.WriteString("\nPress ? or esc to close")
+	var cmd tea.Cmd
+	m.themePicker, cmd = m.themePicker.Update(msg)
+	return m, cmd
+}
 
-	overlay := overlayStyle.Render(b.String())
+func (m AppModel) viewThemePickerOverlay() string {
+	content := m.themePicker.View()
+	overlay := S.Overlay.Render(content)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, overlay)
 }
