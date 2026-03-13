@@ -1,0 +1,79 @@
+# Grove
+
+A Bubbletea TUI for managing AI coding sessions with tmux isolation.
+
+Grove wraps AI coding tools (Claude, OpenCode, Codex) in tmux sessions with a
+visual interface for creating, monitoring, attaching, and managing multiple
+concurrent sessions. Each tool's native session management is preserved — Claude
+sessions resume with `--resume`, OpenCode with `--continue`.
+
+## Features
+
+- **Session list** — status dots, tool, directory, age at a glance
+- **Live peek** — 500ms tmux capture-pane polling with ANSI passthrough
+- **New session wizard** — existing directory or git worktree, tool selection, prompt
+- **Native session resume** — uses each tool's own session management
+- **Worktree management** — create, prune with dirty check
+- **Reconciliation** — syncs DB with tmux reality every 5s
+
+## Install
+
+```bash
+# From source
+./install.sh
+
+# Or manually
+go build -o grove ./cmd/grove
+cp grove /usr/local/bin/
+```
+
+## Usage
+
+```bash
+grove                    # Launch TUI (default)
+grove new --tool claude --dir . --prompt "fix the bug"
+grove list               # Tab-separated session list
+grove attach <id>        # Attach to session directly
+```
+
+## TUI Keybindings
+
+| Key | Action |
+|-----|--------|
+| `enter` | Attach to session |
+| `p` | Peek (live tmux preview) |
+| `n` | New session wizard |
+| `d` | Delete session |
+| `s` | Stop session |
+| `r` | Resume session |
+| `x` | Prune worktree |
+| `?` | Help |
+| `q` | Quit |
+
+## Config
+
+First run triggers a setup wizard. Config lives at `~/.config/grove/config.toml`:
+
+```toml
+[defaults]
+ai_tool = "claude"
+worktree_base = "~/Projects/Work"
+
+[worktree]
+setup_commands = ["npm install"]
+
+[tools.claude]
+command = "claude"
+
+[tools.codex]
+command = "codex"
+
+[tools.opencode]
+command = "opencode"
+```
+
+## Dependencies
+
+- Go 1.24+
+- tmux
+- At least one AI coding tool (claude, opencode, codex)
