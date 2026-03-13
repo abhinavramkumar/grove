@@ -15,6 +15,7 @@ type keyMap struct {
 	Resume key.Binding
 	Prune  key.Binding
 	Filter key.Binding
+	Theme  key.Binding
 	Help   key.Binding
 	Quit   key.Binding
 	Escape key.Binding
@@ -61,6 +62,10 @@ var keys = keyMap{
 		key.WithKeys("ctrl+f"),
 		key.WithHelp("ctrl+f", "filter"),
 	),
+	Theme: key.NewBinding(
+		key.WithKeys("t"),
+		key.WithHelp("t", "theme"),
+	),
 	Help: key.NewBinding(
 		key.WithKeys("?"),
 		key.WithHelp("?", "help"),
@@ -73,22 +78,4 @@ var keys = keyMap{
 		key.WithKeys("esc"),
 		key.WithHelp("esc", "back"),
 	),
-}
-
-// statusBarHelp returns the formatted keybinding hints for the status bar.
-func statusBarHelp() string {
-	bindings := []key.Binding{
-		keys.Attach, keys.Delete, keys.Stop,
-		keys.Resume, keys.New, keys.Prune, keys.Filter, keys.Help, keys.Quit,
-	}
-
-	var s string
-	for i, b := range bindings {
-		if i > 0 {
-			s += "  "
-		}
-		h := b.Help()
-		s += helpKeyStyle.Render(h.Key) + ":" + helpDescStyle.Render(h.Desc)
-	}
-	return s
 }
