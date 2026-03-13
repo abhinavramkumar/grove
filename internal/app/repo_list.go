@@ -5,43 +5,17 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
-
 	"github.com/abhinav/grove/internal/config"
-)
-
-// Styles specific to repo list output.
-var (
-	repoListHeaderStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("7")).
-				Padding(0, 1)
-
-	repoListCellStyle = lipgloss.NewStyle().
-				Padding(0, 1)
-
-	repoListDimStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("8")).
-				Italic(true).
-				Padding(0, 1)
-
-	repoListTitleStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("5")).
-				MarginBottom(1)
-
-	repoListBorderStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("8"))
 )
 
 // PrintRepoList prints a lipgloss-styled table of registered repos.
 func PrintRepoList(cfg *config.Config) {
 	if len(cfg.Repos) == 0 {
-		fmt.Println(emptyStyle.Render("  No repositories registered. Use `grove repo add` to add one."))
+		fmt.Println(S.Empty.Render("  No repositories registered. Use `grove repo add` to add one."))
 		return
 	}
 
-	fmt.Println(repoListTitleStyle.Render("Registered Repositories"))
+	fmt.Println(S.RepoListTitle.Render("Registered Repositories"))
 	fmt.Println()
 
 	// Calculate column widths.
@@ -115,16 +89,16 @@ func PrintRepoList(cfg *config.Config) {
 	// Print header row.
 	var headerLine strings.Builder
 	for i, h := range headers {
-		headerLine.WriteString(repoListHeaderStyle.Width(widths[i] + 2).Render(h))
+		headerLine.WriteString(S.RepoListHeader.Width(widths[i] + 2).Render(h))
 	}
 	fmt.Println(headerLine.String())
 
 	// Print separator.
 	var sep strings.Builder
 	for i, w := range widths {
-		sep.WriteString(repoListBorderStyle.Render(strings.Repeat("─", w+2)))
+		sep.WriteString(S.RepoListBorder.Render(strings.Repeat("─", w+2)))
 		if i < len(widths)-1 {
-			sep.WriteString(repoListBorderStyle.Render("─"))
+			sep.WriteString(S.RepoListBorder.Render("─"))
 		}
 	}
 	fmt.Println(sep.String())
@@ -143,9 +117,9 @@ func PrintRepoList(cfg *config.Config) {
 		}
 		for i, c := range cells {
 			if c.dim {
-				line.WriteString(repoListDimStyle.Width(widths[i] + 2).Render(c.val))
+				line.WriteString(S.RepoListDim.Width(widths[i] + 2).Render(c.val))
 			} else {
-				line.WriteString(repoListCellStyle.Width(widths[i] + 2).Render(c.val))
+				line.WriteString(S.RepoListCell.Width(widths[i] + 2).Render(c.val))
 			}
 		}
 		fmt.Println(line.String())

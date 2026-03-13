@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	"github.com/abhinav/grove/internal/session"
 	"github.com/abhinav/grove/internal/store"
@@ -118,11 +117,11 @@ func (m PeekModel) handleKey(msg tea.KeyMsg) (PeekModel, tea.Cmd) {
 
 // View renders the peek panel.
 func (m PeekModel) View() string {
-	header := peekHeaderStyle.Width(m.width).Render(
+	header := S.PeekHeader.Width(m.width).Render(
 		fmt.Sprintf(" Peek: %s (%s)", m.session.Name, m.session.TmuxSession),
 	)
 
-	bar := statusBarStyle.Width(m.width).Render(
+	bar := S.StatusBar.Width(m.width).Render(
 		peekHelpText(),
 	)
 
@@ -130,9 +129,9 @@ func (m PeekModel) View() string {
 }
 
 func peekHelpText() string {
-	return helpKeyStyle.Render("esc") + ":" + helpDescStyle.Render("back") + "  " +
-		helpKeyStyle.Render("enter") + ":" + helpDescStyle.Render("attach") + "  " +
-		helpKeyStyle.Render("↑↓") + ":" + helpDescStyle.Render("scroll")
+	return S.HelpKey.Render("esc") + S.HelpDesc.Render(":back") + "  " +
+		S.HelpKey.Render("enter") + S.HelpDesc.Render(":attach") + "  " +
+		S.HelpKey.Render("↑↓") + S.HelpDesc.Render(":scroll")
 }
 
 // captureCmd returns a command that captures the tmux pane content.
@@ -153,10 +152,3 @@ func peekTickCmd() tea.Cmd {
 		return peekTickMsg(t)
 	})
 }
-
-// Style for peek header.
-var peekHeaderStyle = lipgloss.NewStyle().
-	Bold(true).
-	Foreground(lipgloss.Color("15")).
-	Background(lipgloss.Color("5")).
-	Padding(0, 1)
