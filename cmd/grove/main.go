@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 	"text/tabwriter"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/abhinav/grove/internal/config"
 	"github.com/abhinav/grove/internal/session"
 	"github.com/abhinav/grove/internal/store"
+	"github.com/abhinav/grove/internal/worktree"
 )
 
 var version = "dev"
@@ -36,11 +38,13 @@ func main() {
 		cmdList(os.Args[2:])
 	case "attach":
 		cmdAttach(os.Args[2:])
+	case "repo":
+		cmdRepo(os.Args[2:])
 	case "update":
 		cmdUpdate()
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
-		fmt.Fprintln(os.Stderr, "usage: grove [new|list|attach|update]")
+		fmt.Fprintln(os.Stderr, "usage: grove [new|list|attach|repo|update]")
 		os.Exit(1)
 	}
 }
@@ -171,6 +175,98 @@ func cmdUpdate() {
 		fmt.Fprintf(os.Stderr, "update failed: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func cmdRepo(args []string) {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: grove repo [add|list]")
+		os.Exit(1)
+	}
+
+	switch args[0] {
+	case "add":
+		cmdRepoAdd(args[1:])
+	case "list":
+		cmdRepoList()
+	default:
+		fmt.Fprintf(os.Stderr, "unknown repo subcommand: %s\n", args[0])
+		fmt.Fprintln(os.Stderr, "usage: grove repo [add|list]")
+		os.Exit(1)
+	}
+}
+
+func cmdRepoAdd(args []string) {
+	fs := flag.NewFlagSet("repo add", flag.ExitOnError)
+	repoRoot := fs.String("repo-root", "", "repository root path (default: detected from cwd)")
+	worktreeBase := fs.String("worktree-base", "", "worktree base directory")
+	aiTool := fs.String("ai-tool", "", "AI tool override")
+	setupCommands := fs.String("setup-commands", "", "comma-separated setup commands")
+	fs.Parse(args)
+
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Detect repo root from cwd if not provided.
+	root := *repoRoot
+	if root == "" {
+		detected, err := worktree.GetMainRepoPath(".")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error detecting repo root (use --repo-root): %v\n", err)
+			os.Exit(1)
+		}
+		root = detected
+	}
+
+	// If worktree-base is not provided, launch TUI wizard.
+	if *worktreeBase == "" && *aiTool == "" && *setupCommands == "" {
+		repo, err := app.RunRepoAddTUI(cfg, root)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		if repo == nil {
+			os.Exit(0)
+		}
+		if err := cfg.AddRepo(*repo); err != nil {
+			fmt.Fprintf(os.Stderr, "error saving repo: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Added repo %s\n", repo.RepoRoot)
+		return
+	}
+
+	// Non-interactive mode: build RepoConfig from flags.
+	repo := config.RepoConfig{
+		RepoRoot:     root,
+		WorktreeBase: *worktreeBase,
+		AITool:       *aiTool,
+	}
+	if *setupCommands != "" {
+		for _, cmd := range strings.Split(*setupCommands, ",") {
+			trimmed := strings.TrimSpace(cmd)
+			if trimmed != "" {
+				repo.SetupCommands = append(repo.SetupCommands, trimmed)
+			}
+		}
+	}
+
+	if err := cfg.AddRepo(repo); err != nil {
+		fmt.Fprintf(os.Stderr, "error saving repo: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Added repo %s\n", repo.RepoRoot)
+}
+
+func cmdRepoList() {
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error loading config: %v\n", err)
+		os.Exit(1)
+	}
+	app.PrintRepoList(cfg)
 }
 
 func launchTUI() {
