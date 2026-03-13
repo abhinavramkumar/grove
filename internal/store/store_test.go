@@ -23,7 +23,7 @@ func TestCreateAndGetSession(t *testing.T) {
 
 	wt := "/tmp/wt"
 	prompt := "do stuff"
-	sess, err := s.CreateSession("test-session", "claude", "/tmp/dir", &wt, &prompt, nil)
+	sess, err := s.CreateSession("test-session", "claude", "/tmp/dir", &wt, &prompt, nil, nil)
 	if err != nil {
 		t.Fatalf("creating session: %v", err)
 	}
@@ -59,11 +59,11 @@ func TestCreateAndGetSession(t *testing.T) {
 func TestListSessions(t *testing.T) {
 	s := newTestStore(t)
 
-	_, err := s.CreateSession("s1", "claude", "/dir1", nil, nil, nil)
+	_, err := s.CreateSession("s1", "claude", "/dir1", nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("creating s1: %v", err)
 	}
-	_, err = s.CreateSession("s2", "codex", "/dir2", nil, nil, nil)
+	_, err = s.CreateSession("s2", "codex", "/dir2", nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("creating s2: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestListSessions(t *testing.T) {
 func TestUpdateSessionStatus(t *testing.T) {
 	s := newTestStore(t)
 
-	sess, err := s.CreateSession("test", "claude", "/dir", nil, nil, nil)
+	sess, err := s.CreateSession("test", "claude", "/dir", nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestUpdateSessionStatus(t *testing.T) {
 func TestDeleteSession(t *testing.T) {
 	s := newTestStore(t)
 
-	sess, err := s.CreateSession("test", "claude", "/dir", nil, nil, nil)
+	sess, err := s.CreateSession("test", "claude", "/dir", nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-const currentVersion = 1
+const currentVersion = 2
 
 func migrate(db *sql.DB) error {
 	var version int
@@ -20,20 +20,28 @@ func migrate(db *sql.DB) error {
 	if version < 1 {
 		if _, err := db.Exec(`
 			CREATE TABLE IF NOT EXISTS sessions (
-				id           TEXT PRIMARY KEY,
-				name         TEXT NOT NULL,
-				tool         TEXT NOT NULL,
-				worktree     TEXT,
-				directory    TEXT NOT NULL,
-				prompt       TEXT,
-				plan_file    TEXT,
-				tmux_session TEXT NOT NULL,
-				status       TEXT DEFAULT 'running',
-				created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
-				stopped_at   DATETIME
+				id              TEXT PRIMARY KEY,
+				name            TEXT NOT NULL,
+				tool            TEXT NOT NULL,
+				worktree        TEXT,
+				directory       TEXT NOT NULL,
+				prompt          TEXT,
+				plan_file       TEXT,
+				tmux_session    TEXT NOT NULL,
+				tool_session_id TEXT,
+				status          TEXT DEFAULT 'running',
+				created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+				stopped_at      DATETIME
 			);
 		`); err != nil {
 			return fmt.Errorf("creating sessions table: %w", err)
+		}
+	}
+
+	if version >= 1 && version < 2 {
+		// Existing v1 databases: add the tool_session_id column.
+		if _, err := db.Exec(`ALTER TABLE sessions ADD COLUMN tool_session_id TEXT`); err != nil {
+			return fmt.Errorf("adding tool_session_id column: %w", err)
 		}
 	}
 

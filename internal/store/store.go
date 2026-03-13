@@ -14,17 +14,18 @@ import (
 
 // Session represents a Grove AI coding session.
 type Session struct {
-	ID          string
-	Name        string
-	Tool        string
-	Worktree    *string
-	Directory   string
-	Prompt      *string
-	PlanFile    *string
-	TmuxSession string
-	Status      string
-	CreatedAt   time.Time
-	StoppedAt   *time.Time
+	ID            string
+	Name          string
+	Tool          string
+	Worktree      *string
+	Directory     string
+	Prompt        *string
+	PlanFile      *string
+	TmuxSession   string
+	ToolSessionID *string // native session ID from the AI tool
+	Status        string
+	CreatedAt     time.Time
+	StoppedAt     *time.Time
 }
 
 // Store wraps a SQLite database for session persistence.
@@ -53,7 +54,6 @@ func Open(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
 
-	// Enable WAL mode for better concurrent access.
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("setting WAL mode: %w", err)
@@ -82,7 +82,7 @@ func generateID() (string, error) {
 }
 
 // CreateSession inserts a new session and returns it with its generated ID.
-func (s *Store) CreateSession(name, tool, directory string, worktree, prompt, planFile *string) (*Session, error) {
+func (s *Store) CreateSession(name, tool, directory string, worktree, prompt, planFile, toolSessionID *string) (*Session, error) {
 	id, err := generateID()
 	if err != nil {
 		return nil, fmt.Errorf("generating id: %w", err)
@@ -91,9 +91,9 @@ func (s *Store) CreateSession(name, tool, directory string, worktree, prompt, pl
 	tmuxSession := "grove-" + id
 
 	_, err = s.db.Exec(`
-		INSERT INTO sessions (id, name, tool, worktree, directory, prompt, plan_file, tmux_session, status)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running')
-	`, id, name, tool, worktree, directory, prompt, planFile, tmuxSession)
+		INSERT INTO sessions (id, name, tool, worktree, directory, prompt, plan_file, tmux_session, tool_session_id, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running')
+	`, id, name, tool, worktree, directory, prompt, planFile, tmuxSession, toolSessionID)
 	if err != nil {
 		return nil, fmt.Errorf("inserting session: %w", err)
 	}
@@ -101,21 +101,17 @@ func (s *Store) CreateSession(name, tool, directory string, worktree, prompt, pl
 	return s.GetSession(id)
 }
 
+const sessionColumns = `id, name, tool, worktree, directory, prompt, plan_file, tmux_session, tool_session_id, status, created_at, stopped_at`
+
 // GetSession retrieves a session by ID.
 func (s *Store) GetSession(id string) (*Session, error) {
-	row := s.db.QueryRow(`
-		SELECT id, name, tool, worktree, directory, prompt, plan_file, tmux_session, status, created_at, stopped_at
-		FROM sessions WHERE id = ?
-	`, id)
+	row := s.db.QueryRow(`SELECT `+sessionColumns+` FROM sessions WHERE id = ?`, id)
 	return scanFrom(row)
 }
 
 // ListSessions returns all sessions, most recent first.
 func (s *Store) ListSessions() ([]*Session, error) {
-	rows, err := s.db.Query(`
-		SELECT id, name, tool, worktree, directory, prompt, plan_file, tmux_session, status, created_at, stopped_at
-		FROM sessions ORDER BY created_at DESC
-	`)
+	rows, err := s.db.Query(`SELECT ` + sessionColumns + ` FROM sessions ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("querying sessions: %w", err)
 	}
@@ -150,6 +146,15 @@ func (s *Store) UpdateSessionStatus(id, status string) error {
 	return nil
 }
 
+// UpdateToolSessionID sets the native tool session ID for a session.
+func (s *Store) UpdateToolSessionID(id, toolSessionID string) error {
+	_, err := s.db.Exec(`UPDATE sessions SET tool_session_id = ? WHERE id = ?`, toolSessionID, id)
+	if err != nil {
+		return fmt.Errorf("updating tool session id: %w", err)
+	}
+	return nil
+}
+
 // DeleteSession removes a session by ID.
 func (s *Store) DeleteSession(id string) error {
 	result, err := s.db.Exec("DELETE FROM sessions WHERE id = ?", id)
@@ -174,7 +179,8 @@ func scanFrom(s scanner) (*Session, error) {
 	err := s.Scan(
 		&sess.ID, &sess.Name, &sess.Tool, &sess.Worktree,
 		&sess.Directory, &sess.Prompt, &sess.PlanFile,
-		&sess.TmuxSession, &sess.Status, &createdAt, &stoppedAt,
+		&sess.TmuxSession, &sess.ToolSessionID, &sess.Status,
+		&createdAt, &stoppedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("scanning session: %w", err)
