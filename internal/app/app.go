@@ -16,8 +16,8 @@ type view int
 
 const (
 	viewList view = iota
-	viewPeek // placeholder for Phase 4
-	viewNew  // placeholder for Phase 4
+	viewPeek
+	viewNew
 )
 
 // tickMsg triggers periodic reconciliation and list refresh.
@@ -38,6 +38,8 @@ type attachDoneMsg struct{ err error }
 // AppModel is the root Bubbletea model.
 type AppModel struct {
 	list    ListModel
+	create  CreateModel
+	peek    PeekModel
 	view    view
 	store   *store.Store
 	config  *config.Config
@@ -65,6 +67,14 @@ func (m AppModel) Init() tea.Cmd {
 
 // Update handles messages.
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Route to active sub-model first for non-list views.
+	switch m.view {
+	case viewNew:
+		return m.updateCreate(msg)
+	case viewPeek:
+		return m.updatePeek(msg)
+	}
+
 	switch msg := msg.(type) {
 
 	case tea.WindowSizeMsg:
@@ -102,6 +112,75 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m AppModel) updateCreate(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.list.Width = msg.Width
+		m.list.Height = msg.Height - 1
+		// Also forward to create model.
+		m.create, _ = m.create.Update(msg)
+		return m, nil
+
+	case createDoneMsg:
+		m.view = viewList
+		m.flash = infoStyle.Render("created session: " + msg.session.Name)
+		return m, m.reconcileAndLoad()
+
+	case createCancelMsg:
+		m.view = viewList
+		return m, nil
+
+	case createErrMsg:
+		// Forward to create model to display the error.
+		var cmd tea.Cmd
+		m.create, cmd = m.create.Update(msg)
+		return m, cmd
+
+	case tickMsg:
+		// Keep background reconciliation running.
+		return m, tea.Batch(m.reconcileAndLoad(), tickCmd())
+
+	case sessionsMsg:
+		m.list.Sessions = msg
+		m.list.ClampCursor()
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.create, cmd = m.create.Update(msg)
+	return m, cmd
+}
+
+func (m AppModel) updatePeek(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.list.Width = msg.Width
+		m.list.Height = msg.Height - 1
+		m.peek, _ = m.peek.Update(msg)
+		return m, nil
+
+	case peekBackMsg:
+		m.view = viewList
+		return m, nil
+
+	case peekAttachMsg:
+		m.view = viewList
+		return m, m.attachByID(msg.sessionID)
+
+	case tickMsg:
+		return m, tea.Batch(m.reconcileAndLoad(), tickCmd())
+
+	case sessionsMsg:
+		m.list.Sessions = msg
+		m.list.ClampCursor()
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.peek, cmd = m.peek.Update(msg)
+	return m, cmd
+}
+
 func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, keys.Quit):
@@ -127,8 +206,26 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.Resume):
 		return m, m.resumeSelected()
 
+	case key.Matches(msg, keys.New):
+		m.create = NewCreateModel(m.config, m.manager)
+		m.view = viewNew
+		return m, m.create.Init()
+
+	case key.Matches(msg, keys.Peek):
+		sess := m.list.Selected()
+		if sess == nil {
+			return m, nil
+		}
+		if sess.Status != "running" {
+			m.flash = infoStyle.Render("can only peek running sessions")
+			return m, nil
+		}
+		m.peek = NewPeekModel(sess, m.manager, m.list.Width, m.list.Height+1)
+		m.view = viewPeek
+		return m, m.peek.Init()
+
 	case key.Matches(msg, keys.Escape):
-		// No-op for now; only list view exists.
+		// No-op in list view.
 		return m, nil
 	}
 
@@ -137,6 +234,13 @@ func (m AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // View renders the current view.
 func (m AppModel) View() string {
+	switch m.view {
+	case viewNew:
+		return m.create.View()
+	case viewPeek:
+		return m.peek.View()
+	}
+
 	body := m.list.View()
 
 	// Status bar.
@@ -181,6 +285,16 @@ func (m AppModel) attachSelected() tea.Cmd {
 		return func() tea.Msg { return errMsg{err} }
 	}
 
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return attachDoneMsg{err}
+	})
+}
+
+func (m AppModel) attachByID(sessionID string) tea.Cmd {
+	cmd, err := m.manager.Attach(sessionID)
+	if err != nil {
+		return func() tea.Msg { return errMsg{err} }
+	}
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return attachDoneMsg{err}
 	})
